@@ -1,0 +1,395 @@
+import asyncHandler from 'express-async-handler';
+import Invoice from '../models/Invoice.js';
+import Payment from '../models/Payment.js';
+import Reminder from '../models/Reminder.js';
+import Booking from '../models/Booking.js';
+import ActivityLog from '../models/ActivityLog.js';
+import { sendEmail } from '../config/email.js';
+import { invoiceEmailTemplate, paymentReceiptTemplate } from '../utils/emailTemplates.js';
+import { generateInvoicePDF, generateReceiptPDF } from '../utils/pdfGenerator.js';
+
+// ========== INVOICE MANAGEMENT ==========
+
+// @desc    Get all invoices
+// @route   GET /api/billing/invoices
+// @access  Private
+export const getInvoices = asyncHandler(async (req, res) => {
+  const { status, startDate, endDate } = req.query;
+  
+  let query = {};
+  if (status) {
+    query.status = Array.isArray(status) ? { $in: status } : status;
+  }
+  if (startDate && endDate) {
+    query.createdAt = { $gte: new Date(startDate), $lte: new Date(endDate) };
+  }
+
+  const invoices = await Invoice.find(query)
+    .populate('booking', 'bookingNumber guestName')
+    .populate('createdBy', 'name')
+    .sort({ createdAt: -1 });
+
+  res.json({
+    success: true,
+    count: invoices.length,
+    data: invoices
+  });
+});
+
+// @desc    Get single invoice
+// @route   GET /api/billing/invoices/:id
+// @access  Private
+export const getInvoiceById = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.id)
+    .populate('booking')
+    .populate('createdBy', 'name email');
+
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+
+  res.json({
+    success: true,
+    data: invoice
+  });
+});
+
+// @desc    Create invoice
+// @route   POST /api/billing/invoices
+// @access  Private
+export const createInvoice = asyncHandler(async (req, res) => {
+  const { booking: bookingId, ...invoiceData } = req.body;
+
+  // Verify booking exists
+  const booking = await Booking.findById(bookingId);
+  if (!booking) {
+    res.status(404);
+    throw new Error('Booking not found');
+  }
+
+  // Calculate final amount
+  const finalAmount = invoiceData.totalAmount + (invoiceData.taxAmount || 0) - (invoiceData.discountAmount || 0);
+
+  const invoice = await Invoice.create({
+    ...invoiceData,
+    booking: bookingId,
+    finalAmount,
+    createdBy: req.user._id
+  });
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'create',
+    resource: 'invoice',
+    resourceId: invoice._id,
+    description: `Created invoice ${invoice.invoiceNumber} for ${invoice.customerName}`
+  });
+
+  const populatedInvoice = await Invoice.findById(invoice._id)
+    .populate('booking', 'bookingNumber');
+
+  res.status(201).json({
+    success: true,
+    data: populatedInvoice
+  });
+});
+
+// @desc    Update invoice
+// @route   PATCH /api/billing/invoices/:id
+// @access  Private
+export const updateInvoice = asyncHandler(async (req, res) => {
+  let invoice = await Invoice.findById(req.params.id);
+
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+
+  // Recalculate final amount if amounts changed
+  if (req.body.totalAmount || req.body.taxAmount || req.body.discountAmount) {
+    const totalAmount = req.body.totalAmount || invoice.totalAmount;
+    const taxAmount = req.body.taxAmount !== undefined ? req.body.taxAmount : invoice.taxAmount;
+    const discountAmount = req.body.discountAmount !== undefined ? req.body.discountAmount : invoice.discountAmount;
+    req.body.finalAmount = totalAmount + taxAmount - discountAmount;
+  }
+
+  invoice = await Invoice.findByIdAndUpdate(
+    req.params.id,
+    req.body,
+    { new: true, runValidators: true }
+  );
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'update',
+    resource: 'invoice',
+    resourceId: invoice._id,
+    description: `Updated invoice ${invoice.invoiceNumber}`
+  });
+
+  res.json({
+    success: true,
+    data: invoice
+  });
+});
+
+// @desc    Send invoice via email
+// @route   POST /api/billing/invoices/:id/send-email
+// @access  Private
+export const sendInvoiceEmail = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.id)
+    .populate('booking');
+
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+
+  const emailHtml = invoiceEmailTemplate(invoice);
+
+  await sendEmail({
+    to: invoice.email,
+    subject: `Invoice ${invoice.invoiceNumber}`,
+    html: emailHtml
+  });
+
+  invoice.status = 'Sent';
+  invoice.sentAt = new Date();
+  await invoice.save();
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'send_email',
+    resource: 'invoice',
+    resourceId: invoice._id,
+    description: `Sent invoice ${invoice.invoiceNumber} to ${invoice.email}`
+  });
+
+  res.json({
+    success: true,
+    message: 'Invoice sent successfully'
+  });
+});
+
+// @desc    Export invoice as PDF
+// @route   GET /api/billing/invoices/:id/pdf
+// @access  Private
+export const exportInvoicePDF = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.id)
+    .populate('booking');
+
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+
+  const pdfBuffer = await generateInvoicePDF(invoice);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename=invoice-${invoice.invoiceNumber}.pdf`);
+  res.send(pdfBuffer);
+});
+
+// ========== PAYMENT MANAGEMENT ==========
+
+// @desc    Get all payments
+// @route   GET /api/billing/payments
+// @access  Private
+export const getPayments = asyncHandler(async (req, res) => {
+  const { status, method, startDate, endDate } = req.query;
+  
+  let query = {};
+  if (status) query.status = status;
+  if (method) query.method = method;
+  if (startDate && endDate) {
+    query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+  }
+
+  const payments = await Payment.find(query)
+    .populate('invoice', 'invoiceNumber customerName')
+    .populate('booking', 'bookingNumber')
+    .populate('processedBy', 'name')
+    .sort({ date: -1 });
+
+  res.json({
+    success: true,
+    count: payments.length,
+    data: payments
+  });
+});
+
+// @desc    Get payments by invoice
+// @route   GET /api/billing/payments/invoice/:invoiceId
+// @access  Private
+export const getPaymentsByInvoice = asyncHandler(async (req, res) => {
+  const payments = await Payment.find({ invoice: req.params.invoiceId })
+    .populate('processedBy', 'name')
+    .sort({ date: -1 });
+
+  res.json({
+    success: true,
+    count: payments.length,
+    data: payments
+  });
+});
+
+// @desc    Record payment
+// @route   POST /api/billing/payments
+// @access  Private
+export const recordPayment = asyncHandler(async (req, res) => {
+  const { invoice: invoiceId, booking: bookingId, amount, method, transactionId, date, notes } = req.body;
+
+  // Verify invoice exists
+  const invoice = await Invoice.findById(invoiceId);
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+
+  // Check if payment amount doesn't exceed balance
+  if (amount > invoice.balance) {
+    res.status(400);
+    throw new Error('Payment amount cannot exceed invoice balance');
+  }
+
+  const payment = await Payment.create({
+    invoice: invoiceId,
+    booking: bookingId || invoice.booking,
+    amount,
+    method,
+    transactionId,
+    date: date || new Date(),
+    notes,
+    processedBy: req.user._id,
+    status: 'Completed'
+  });
+
+  // Update invoice
+  invoice.paidAmount += amount;
+  invoice.balance = invoice.finalAmount - invoice.paidAmount;
+  
+  if (invoice.balance <= 0) {
+    invoice.status = 'Paid';
+    invoice.paidAt = new Date();
+  } else {
+    invoice.status = 'Partial';
+  }
+  
+  await invoice.save();
+
+  // Update booking if linked
+  if (bookingId) {
+    await Booking.findByIdAndUpdate(bookingId, {
+      paidAmount: invoice.paidAmount,
+      balance: invoice.balance
+    });
+  }
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'record_payment',
+    resource: 'payment',
+    resourceId: payment._id,
+    description: `Recorded payment of $${amount} for invoice ${invoice.invoiceNumber}`
+  });
+
+  // Send payment receipt email
+  const receiptHtml = paymentReceiptTemplate(payment, invoice);
+  await sendEmail({
+    to: invoice.email,
+    subject: `Payment Receipt - ${payment.paymentId}`,
+    html: receiptHtml
+  });
+
+  const populatedPayment = await Payment.findById(payment._id)
+    .populate('invoice', 'invoiceNumber')
+    .populate('processedBy', 'name');
+
+  res.status(201).json({
+    success: true,
+    data: populatedPayment
+  });
+});
+
+// ========== REMINDER MANAGEMENT ==========
+
+// @desc    Get all reminders
+// @route   GET /api/billing/reminders
+// @access  Private
+export const getReminders = asyncHandler(async (req, res) => {
+  const reminders = await Reminder.find()
+    .populate('createdBy', 'name')
+    .sort({ createdAt: -1 });
+
+  res.json({
+    success: true,
+    count: reminders.length,
+    data: reminders
+  });
+});
+
+// @desc    Create reminder
+// @route   POST /api/billing/reminders
+// @access  Private
+export const createReminder = asyncHandler(async (req, res) => {
+  const reminder = await Reminder.create({
+    ...req.body,
+    createdBy: req.user._id
+  });
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'create',
+    resource: 'other',
+    resourceId: reminder._id,
+    description: `Created payment reminder: ${reminder.subject}`
+  });
+
+  res.status(201).json({
+    success: true,
+    data: reminder
+  });
+});
+
+// @desc    Update reminder
+// @route   PATCH /api/billing/reminders/:id
+// @access  Private
+export const updateReminder = asyncHandler(async (req, res) => {
+  let reminder = await Reminder.findById(req.params.id);
+
+  if (!reminder) {
+    res.status(404);
+    throw new Error('Reminder not found');
+  }
+
+  reminder = await Reminder.findByIdAndUpdate(
+    req.params.id,
+    req.body,
+    { new: true, runValidators: true }
+  );
+
+  res.json({
+    success: true,
+    data: reminder
+  });
+});
+
+// @desc    Delete reminder
+// @route   DELETE /api/billing/reminders/:id
+// @access  Private
+export const deleteReminder = asyncHandler(async (req, res) => {
+  const reminder = await Reminder.findById(req.params.id);
+
+  if (!reminder) {
+    res.status(404);
+    throw new Error('Reminder not found');
+  }
+
+  await reminder.deleteOne();
+
+  res.json({
+    success: true,
+    message: 'Reminder deleted successfully'
+  });
+});
