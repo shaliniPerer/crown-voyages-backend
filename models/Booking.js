@@ -3,8 +3,7 @@ import mongoose from 'mongoose';
 const bookingSchema = new mongoose.Schema({
   bookingNumber: {
     type: String,
-    unique: true,
-    required: true
+    unique: true
   },
   guestName: {
     type: String,
@@ -50,6 +49,14 @@ const bookingSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'Children cannot be negative']
   },
+  rooms: {
+    type: Number,
+    default: 1,
+    min: [1, 'At least 1 room required']
+  },
+  mealPlan: {
+    type: String
+  },
   totalAmount: {
     type: Number,
     required: [true, 'Please provide total amount'],
@@ -77,6 +84,28 @@ const bookingSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  passengerDetails: [{
+    roomNumber: { type: Number },
+    adults: [{
+      name: { type: String },
+      passport: { type: String },
+      country: { type: String },
+      arrivalFlightNumber: { type: String },
+      arrivalTime: { type: String },
+      departureFlightNumber: { type: String },
+      departureTime: { type: String }
+    }],
+    children: [{
+      name: { type: String },
+      passport: { type: String },
+      country: { type: String },
+      age: { type: Number },
+      arrivalFlightNumber: { type: String },
+      arrivalTime: { type: String },
+      departureFlightNumber: { type: String },
+      departureTime: { type: String }
+    }]
+  }],
   notes: {
     type: String,
     trim: true

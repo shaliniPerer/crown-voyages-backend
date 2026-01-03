@@ -8,8 +8,11 @@ const invoiceSchema = new mongoose.Schema({
   },
   booking: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Booking',
-    required: true
+    ref: 'Booking'
+  },
+  lead: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Lead'
   },
   customerName: {
     type: String,
@@ -26,58 +29,35 @@ const invoiceSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  totalAmount: {
+  amount: {
     type: Number,
-    required: [true, 'Please provide total amount'],
+    required: [true, 'Please provide base amount'],
     min: [0, 'Amount cannot be negative']
   },
-  taxAmount: {
+  discountValue: {
     type: Number,
     default: 0,
-    min: [0, 'Tax amount cannot be negative']
-  },
-  discountAmount: {
-    type: Number,
-    default: 0,
-    min: [0, 'Discount amount cannot be negative']
+    min: [0, 'Discount cannot be negative']
   },
   finalAmount: {
     type: Number,
     required: true,
     min: [0, 'Final amount cannot be negative']
   },
-  paidAmount: {
-    type: Number,
-    default: 0,
-    min: [0, 'Paid amount cannot be negative']
-  },
-  balance: {
-    type: Number,
-    default: 0
-  },
   dueDate: {
     type: Date,
-    required: [true, 'Please provide due date']
+    required: false
   },
   status: {
     type: String,
     enum: ['Draft', 'Sent', 'Pending', 'Partial', 'Paid', 'Overdue', 'Cancelled'],
-    default: 'Pending'
+    default: 'Draft'
   },
-  items: [{
-    description: String,
-    quantity: Number,
-    unitPrice: Number,
-    amount: Number
-  }],
   notes: {
     type: String,
     trim: true
   },
   sentAt: {
-    type: Date
-  },
-  paidAt: {
     type: Date
   },
   createdBy: {
@@ -98,22 +78,6 @@ invoiceSchema.pre('save', async function(next) {
     const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     this.invoiceNumber = `INV${year}${month}${random}`;
   }
-  
-  // Calculate balance
-  this.balance = this.finalAmount - this.paidAmount;
-  
-  // Update status based on payment
-  if (this.paidAmount >= this.finalAmount) {
-    this.status = 'Paid';
-    if (!this.paidAt) {
-      this.paidAt = new Date();
-    }
-  } else if (this.paidAmount > 0) {
-    this.status = 'Partial';
-  } else if (new Date() > this.dueDate && this.status !== 'Paid') {
-    this.status = 'Overdue';
-  }
-  
   next();
 });
 

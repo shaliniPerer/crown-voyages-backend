@@ -176,3 +176,43 @@ export const getLeadFunnel = asyncHandler(async (req, res) => {
     }
   });
 });
+
+// @desc    Get lead status distribution
+// @route   GET /api/dashboard/lead-status
+// @access  Private
+export const getLeadStatusDistribution = asyncHandler(async (req, res) => {
+  const statusCounts = await Lead.aggregate([
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+
+  const statusData = statusCounts.map(item => ({
+    name: item._id,
+    value: item.count,
+    color: getStatusColor(item._id)
+  }));
+
+  res.json({
+    success: true,
+    data: statusData
+  });
+});
+
+// Helper function to get color for status
+const getStatusColor = (status) => {
+  const colors = {
+    'New': '#3B82F6',
+    'Pending': '#F59E0B',
+    'Quotation': '#8B5CF6',
+    'Invoice': '#EC4899',
+    'Receipt': '#10B981',
+    'Confirmed': '#10B981',
+    'Cancelled': '#EF4444',
+    'Converted': '#D4AF37'
+  };
+  return colors[status] || '#6B7280';
+};

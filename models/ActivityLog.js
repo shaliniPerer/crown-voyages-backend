@@ -19,6 +19,7 @@ const activityLogSchema = new mongoose.Schema({
       'generate_pdf',
       'record_payment',
       'convert_quotation',
+      'convert_lead',
       'other'
     ]
   },

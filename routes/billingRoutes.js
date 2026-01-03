@@ -9,6 +9,7 @@ import {
   getPayments,
   getPaymentsByInvoice,
   recordPayment,
+  sendPaymentReceiptEmail,
   getReminders,
   createReminder,
   updateReminder,
@@ -34,6 +35,7 @@ router.get('/invoices/:id/pdf', exportInvoicePDF);
 router.get('/payments', getPayments);
 router.get('/payments/invoice/:invoiceId', getPaymentsByInvoice);
 router.post('/payments', isFinanceOrAdmin, recordPayment);
+router.post('/payments/:id/send-receipt', sendPaymentReceiptEmail);
 
 // Reminder routes
 router.get('/reminders', getReminders);

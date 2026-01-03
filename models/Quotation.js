@@ -24,35 +24,26 @@ const quotationSchema = new mongoose.Schema({
   },
   resort: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Resort',
-    required: [true, 'Please specify the resort']
+    ref: 'Resort'
   },
   room: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Room'
   },
-  checkIn: {
-    type: Date,
-    required: [true, 'Please provide check-in date']
-  },
-  checkOut: {
-    type: Date,
-    required: [true, 'Please provide check-out date']
-  },
-  adults: {
+  amount: {
     type: Number,
-    required: [true, 'Please specify number of adults'],
-    min: [1, 'At least 1 adult required']
+    required: [true, 'Please provide base amount'],
+    min: [0, 'Amount cannot be negative']
   },
-  children: {
+  discountValue: {
     type: Number,
     default: 0,
-    min: [0, 'Children cannot be negative']
+    min: [0, 'Discount cannot be negative']
   },
-  totalAmount: {
+  finalAmount: {
     type: Number,
-    required: [true, 'Please provide total amount'],
-    min: [0, 'Amount cannot be negative']
+    required: true,
+    min: [0, 'Final amount cannot be negative']
   },
   status: {
     type: String,
@@ -61,7 +52,11 @@ const quotationSchema = new mongoose.Schema({
   },
   validUntil: {
     type: Date,
-    required: true
+    required: false
+  },
+  lead: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Lead'
   },
   versions: [{
     version: {
@@ -79,6 +74,10 @@ const quotationSchema = new mongoose.Schema({
     }
   }],
   notes: {
+    type: String,
+    trim: true
+  },
+  terms: {
     type: String,
     trim: true
   },

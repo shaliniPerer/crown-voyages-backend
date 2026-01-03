@@ -1,5 +1,16 @@
 // Quotation Email Template
 export const quotationEmailTemplate = (quotation) => {
+  const resortName = quotation.lead?.resort?.name || 'Your Selected Resort';
+  const roomType = quotation.lead?.room?.roomType || 'Premium Room';
+  const checkIn = quotation.lead?.checkIn ? new Date(quotation.lead.checkIn).toLocaleDateString() : 'TBD';
+  const checkOut = quotation.lead?.checkOut ? new Date(quotation.lead.checkOut).toLocaleDateString() : 'TBD';
+  let nights = 0;
+  if (quotation.lead?.checkIn && quotation.lead?.checkOut) {
+    nights = Math.ceil((new Date(quotation.lead.checkOut) - new Date(quotation.lead.checkIn)) / (1000 * 60 * 60 * 24));
+  }
+  const adults = quotation.lead?.adults || 0;
+  const children = quotation.lead?.children || 0;
+
   return `
     <!DOCTYPE html>
     <html>
@@ -10,9 +21,7 @@ export const quotationEmailTemplate = (quotation) => {
         .header { background: linear-gradient(135deg, #D4AF37 0%, #FFD700 100%); color: #000; padding: 30px; text-align: center; }
         .content { background: #f9f9f9; padding: 30px; }
         .details { background: white; padding: 20px; margin: 20px 0; border-left: 4px solid #D4AF37; }
-        .table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        .table th { background: #D4AF37; color: #000; }
+        .pricing { background: white; padding: 20px; margin: 20px 0; border-left: 4px solid #D4AF37; }
         .total { font-size: 24px; font-weight: bold; color: #D4AF37; text-align: right; margin-top: 20px; }
         .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
         .button { display: inline-block; padding: 12px 30px; background: #D4AF37; color: #000; text-decoration: none; border-radius: 5px; margin: 20px 0; }
@@ -30,31 +39,33 @@ export const quotationEmailTemplate = (quotation) => {
           
           <div class="details">
             <h3>Resort Information</h3>
-            <p><strong>Resort:</strong> ${quotation.resort?.name}</p>
-            <p><strong>Location:</strong> ${quotation.resort?.location}</p>
-            ${quotation.room ? `<p><strong>Room Type:</strong> ${quotation.room.roomType}</p>` : ''}
+            <p><strong>Resort:</strong> ${resortName}</p>
+            <p><strong>Room Type:</strong> ${roomType}</p>
           </div>
           
           <div class="details">
             <h3>Stay Details</h3>
-            <p><strong>Check-in:</strong> ${new Date(quotation.checkIn).toLocaleDateString()}</p>
-            <p><strong>Check-out:</strong> ${new Date(quotation.checkOut).toLocaleDateString()}</p>
-            <p><strong>Duration:</strong> ${Math.ceil((new Date(quotation.checkOut) - new Date(quotation.checkIn)) / (1000 * 60 * 60 * 24))} nights</p>
-            <p><strong>Guests:</strong> ${quotation.adults} Adults${quotation.children > 0 ? `, ${quotation.children} Children` : ''}</p>
+            <p><strong>Check-in:</strong> ${checkIn}</p>
+            <p><strong>Check-out:</strong> ${checkOut}</p>
+            ${nights > 0 ? `<p><strong>Duration:</strong> ${nights} nights</p>` : ''}
+            <p><strong>Guests:</strong> ${adults} Adults${children > 0 ? `, ${children} Children` : ''}</p>
           </div>
           
-          <div class="total">
-            Total: $${quotation.totalAmount.toLocaleString()}
+          <div class="pricing">
+            <h3>Pricing</h3>
+            <p><strong>Base Price:</strong> $${(quotation.amount || 0).toFixed(2)}</p>
+            <p><strong>Discount:</strong> -$${(quotation.discountValue || 0).toFixed(2)}</p>
+            <div class="total">Final Amount: $${(quotation.finalAmount || 0).toFixed(2)}</div>
           </div>
           
-          ${quotation.notes ? `<p><strong>Notes:</strong> ${quotation.notes}</p>` : ''}
+          ${quotation.notes ? `<div class="details"><p><strong>Notes:</strong> ${quotation.notes}</p></div>` : ''}
           
-          <p><strong>Valid Until:</strong> ${new Date(quotation.validUntil).toLocaleDateString()}</p>
+          ${quotation.validUntil ? `<p><strong>Valid Until:</strong> ${new Date(quotation.validUntil).toLocaleDateString()}</p>` : ''}
           
           <p>To proceed with this booking, please reply to this email or contact us directly.</p>
         </div>
         <div class="footer">
-          <p>Resort Luxury Management System</p>
+          <p>Crown Voyages Resort Management</p>
           <p>© ${new Date().getFullYear()} All rights reserved</p>
         </div>
       </div>
@@ -65,6 +76,9 @@ export const quotationEmailTemplate = (quotation) => {
 
 // Invoice Email Template
 export const invoiceEmailTemplate = (invoice) => {
+  const reference = invoice.booking ? `Booking #${invoice.booking.bookingNumber}` : 
+                   invoice.lead ? `Lead Reference` : 'N/A';
+  
   return `
     <!DOCTYPE html>
     <html>
@@ -103,7 +117,7 @@ export const invoiceEmailTemplate = (invoice) => {
             <div style="margin-top: 20px;">
               <p><strong>Invoice Date:</strong> ${new Date(invoice.createdAt).toLocaleDateString()}</p>
               <p><strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString()}</p>
-              <p><strong>Booking Reference:</strong> ${invoice.booking?.bookingNumber || 'N/A'}</p>
+              <p><strong>Reference:</strong> ${reference}</p>
             </div>
           </div>
           

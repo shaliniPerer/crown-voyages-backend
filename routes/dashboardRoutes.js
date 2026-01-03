@@ -4,7 +4,8 @@ import {
   getUpcomingBookings,
   getOutstandingPayments,
   getRevenueChart,
-  getLeadFunnel
+  getLeadFunnel,
+  getLeadStatusDistribution
 } from '../controllers/dashboardController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -18,5 +19,6 @@ router.get('/upcoming-bookings', getUpcomingBookings);
 router.get('/outstanding-payments', getOutstandingPayments);
 router.get('/revenue-chart', getRevenueChart);
 router.get('/lead-funnel', getLeadFunnel);
+router.get('/lead-status', getLeadStatusDistribution);
 
 export default router;

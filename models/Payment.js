@@ -15,6 +15,10 @@ const paymentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Booking'
   },
+  lead: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Lead'
+  },
   amount: {
     type: Number,
     required: [true, 'Please provide payment amount'],

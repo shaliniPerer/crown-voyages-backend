@@ -1,71 +1,82 @@
 import mongoose from 'mongoose';
 
 const leadSchema = new mongoose.Schema({
-  customerName: {
+ guestName: {
     type: String,
-    required: [true, 'Please provide customer name'],
+    required: [true, 'Guest name is required'],
     trim: true
   },
   email: {
     type: String,
-    required: [true, 'Please provide email'],
+    required: [true, 'Email is required'],
     trim: true,
     lowercase: true
   },
   phone: {
     type: String,
-    required: [true, 'Please provide phone number'],
+    required: [true, 'Phone number is required'],
     trim: true
+  },
+  resort: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Resort',
+    required: [true, 'Resort is required']
+  },
+  room: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Room',
+    required: [true, 'Room is required']
+  },
+  checkIn: {
+    type: Date,
+    required: [true, 'Check-in date is required']
+  },
+  checkOut: {
+    type: Date,
+    required: [true, 'Check-out date is required']
+  },
+  adults: {
+    type: Number,
+    required: [true, 'Number of adults is required'],
+    min: 1
+  },
+  children: {
+    type: Number,
+    default: 0
+  },
+  rooms: {
+    type: Number,
+    default: 1
+  },
+  mealPlan: {
+    type: String
+  },
+  mealPlanPrice: {
+    type: Number,
+    default: 0
+  },
+  specialRequests: {
+    type: String
+  },
+  totalAmount: {
+    type: Number,
+    required: [true, 'Total amount is required']
   },
   source: {
     type: String,
-    enum: ['Website', 'Phone', 'Email', 'Referral', 'Social Media', 'Walk-in', 'Agent', 'Other'],
     default: 'Website'
   },
   status: {
     type: String,
-    enum: ['New', 'Contacted', 'Qualified', 'Quotation Sent', 'Converted', 'Lost'],
+    enum: ['New', 'Pending', 'Quotation', 'Invoice', 'Receipt', 'Confirmed', 'Cancelled', 'Converted'],
     default: 'New'
-  },
-  interestedIn: {
-    resort: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Resort'
-    },
-    checkIn: Date,
-    checkOut: Date,
-    adults: Number,
-    children: Number
-  },
-  notes: {
-    type: String,
-    trim: true
-  },
-  assignedTo: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  convertedToQuotation: {
-    type: Boolean,
-    default: false
-  },
-  quotation: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Quotation'
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   }
-}, {
-  timestamps: true
-});
-
-// Index for faster searches
-leadSchema.index({ status: 1, createdAt: -1 });
-leadSchema.index({ email: 1 });
-leadSchema.index({ assignedTo: 1 });
+}, { timestamps: true });
 
 const Lead = mongoose.model('Lead', leadSchema);
 

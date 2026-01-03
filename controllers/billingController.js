@@ -3,6 +3,7 @@ import Invoice from '../models/Invoice.js';
 import Payment from '../models/Payment.js';
 import Reminder from '../models/Reminder.js';
 import Booking from '../models/Booking.js';
+import Lead from '../models/Lead.js';
 import ActivityLog from '../models/ActivityLog.js';
 import { sendEmail } from '../config/email.js';
 import { invoiceEmailTemplate, paymentReceiptTemplate } from '../utils/emailTemplates.js';
@@ -59,13 +60,27 @@ export const getInvoiceById = asyncHandler(async (req, res) => {
 // @route   POST /api/billing/invoices
 // @access  Private
 export const createInvoice = asyncHandler(async (req, res) => {
-  const { booking: bookingId, ...invoiceData } = req.body;
+  const { booking: bookingId, lead: leadId, ...invoiceData } = req.body;
 
-  // Verify booking exists
-  const booking = await Booking.findById(bookingId);
-  if (!booking) {
-    res.status(404);
-    throw new Error('Booking not found');
+  let booking = null;
+  let lead = null;
+
+  // Verify booking or lead exists
+  if (bookingId) {
+    booking = await Booking.findById(bookingId);
+    if (!booking) {
+      res.status(404);
+      throw new Error('Booking not found');
+    }
+  } else if (leadId) {
+    lead = await Lead.findById(leadId);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+  } else {
+    res.status(400);
+    throw new Error('Either booking or lead ID is required');
   }
 
   // Calculate final amount
@@ -74,6 +89,7 @@ export const createInvoice = asyncHandler(async (req, res) => {
   const invoice = await Invoice.create({
     ...invoiceData,
     booking: bookingId,
+    lead: leadId,
     finalAmount,
     createdBy: req.user._id
   });
@@ -139,7 +155,8 @@ export const updateInvoice = asyncHandler(async (req, res) => {
 // @access  Private
 export const sendInvoiceEmail = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findById(req.params.id)
-    .populate('booking');
+    .populate('booking')
+    .populate('lead');
 
   if (!invoice) {
     res.status(404);
@@ -172,7 +189,41 @@ export const sendInvoiceEmail = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Export invoice as PDF
+// @desc    Send payment receipt via email
+// @route   POST /api/billing/payments/:id/send-receipt
+// @access  Private
+export const sendPaymentReceiptEmail = asyncHandler(async (req, res) => {
+  const payment = await Payment.findById(req.params.id)
+    .populate('invoice')
+    .populate('lead');
+
+  if (!payment) {
+    res.status(404);
+    throw new Error('Payment not found');
+  }
+
+  const invoice = payment.invoice;
+  const receiptHtml = paymentReceiptTemplate(payment, invoice);
+
+  await sendEmail({
+    to: invoice.email,
+    subject: `Payment Receipt ${payment.paymentId}`,
+    html: receiptHtml
+  });
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'send_email',
+    resource: 'payment',
+    resourceId: payment._id,
+    description: `Sent payment receipt ${payment.paymentId} to ${invoice.email}`
+  });
+
+  res.json({
+    success: true,
+    message: 'Payment receipt sent successfully'
+  });
+});
 // @route   GET /api/billing/invoices/:id/pdf
 // @access  Private
 export const exportInvoicePDF = asyncHandler(async (req, res) => {
@@ -238,7 +289,7 @@ export const getPaymentsByInvoice = asyncHandler(async (req, res) => {
 // @route   POST /api/billing/payments
 // @access  Private
 export const recordPayment = asyncHandler(async (req, res) => {
-  const { invoice: invoiceId, booking: bookingId, amount, method, transactionId, date, notes } = req.body;
+  const { invoice: invoiceId, booking: bookingId, lead: leadId, amount, method, transactionId, date, notes } = req.body;
 
   // Verify invoice exists
   const invoice = await Invoice.findById(invoiceId);
@@ -256,6 +307,7 @@ export const recordPayment = asyncHandler(async (req, res) => {
   const payment = await Payment.create({
     invoice: invoiceId,
     booking: bookingId || invoice.booking,
+    lead: leadId || invoice.lead,
     amount,
     method,
     transactionId,
