@@ -27,42 +27,58 @@ connectDB();
 // Initialize Express
 const app = express();
 
-// Security Middleware
+/* -------------------- Security Middleware -------------------- */
 app.use(helmet());
 
-// CORS Configuration
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true
-}));
+/* -------------------- CORS Configuration -------------------- */
+const allowedOrigins = [
+  'http://localhost:5173',
+  process.env.CLIENT_URL,
+  'https://crown-voyages-frontend.vercel.app',
+];
 
-// Body Parser Middleware
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+  })
+);
+
+/* -------------------- Body Parser -------------------- */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Logging Middleware
-if (process.env.NODE_ENV === 'development') {
+/* -------------------- Logging -------------------- */
+if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
-// Rate Limiting
+/* -------------------- Rate Limiting -------------------- */
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use('/api/', limiter);
 
-// Health Check Route
+/* -------------------- Health Check -------------------- */
 app.get('/api/health', (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
-    message: 'Resort Management API is running',
-    timestamp: new Date().toISOString()
+    message: 'Resort Management API is running 🚀',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString(),
   });
 });
 
-// API Routes
+/* -------------------- API Routes -------------------- */
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/analytics', analyticsRoutes);
@@ -73,21 +89,22 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/upload', uploadRoutes);
 
-// 404 Handler
-app.use('*', (req, res) => {
+/* -------------------- 404 Handler -------------------- */
+app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: 'Route not found'
+    message: 'Route not found',
   });
 });
 
-// Error Handler Middleware
+/* -------------------- Error Handler -------------------- */
 app.use(errorHandler);
 
-// Start Server
+/* -------------------- Start Server -------------------- */
 const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
-  console.log(`🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-  console.log(`📊 API URL: http://localhost:${PORT}/api`);
-  console.log(`🔗 Frontend URL: ${process.env.CLIENT_URL}`);
+  console.log(`🚀 Server running in ${process.env.NODE_ENV} mode`);
+  console.log(`🌐 Port: ${PORT}`);
+  console.log(`🔗 Frontend: ${process.env.CLIENT_URL}`);
 });
