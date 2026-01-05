@@ -20,6 +20,8 @@ export const getLeads = asyncHandler(async (req, res) => {
 
   try {
     const leads = await Lead.find(query)
+      .populate('resort', 'name location starRating description amenities mealPlan images')
+      .populate('room', 'roomType roomName price description size bedType maxAdults maxChildren amenities images')
       .sort({ createdAt: -1 });
 
     res.json({
@@ -65,8 +67,8 @@ export const createLead = asyncHandler(async (req, res) => {
 // @access  Private
 export const getLead = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(req.params.id)
-    .populate('resort', 'name location')
-    .populate('room', 'roomType price')
+    .populate('resort', 'name location starRating images')
+    .populate('room', 'roomType roomName price images')
     .populate('createdBy', 'name');
 
   if (!lead) {
@@ -106,6 +108,13 @@ export const updateLead = asyncHandler(async (req, res) => {
     delete updateData.room;
   }
 
+  // Calculate balance if payment fields are being updated
+  if (updateData.totalAmount !== undefined || updateData.paidAmount !== undefined) {
+    const totalAmount = updateData.totalAmount !== undefined ? updateData.totalAmount : lead.totalAmount;
+    const paidAmount = updateData.paidAmount !== undefined ? updateData.paidAmount : (lead.paidAmount || 0);
+    updateData.balance = totalAmount - paidAmount;
+  }
+
   console.log('✏️ Updating lead with data:', updateData);
   
   try {
@@ -114,8 +123,8 @@ export const updateLead = asyncHandler(async (req, res) => {
       updateData,
       { new: true, runValidators: false } // Disable validators to allow partial updates
     )
-      .populate('resort', 'name location')
-      .populate('room', 'roomType price');
+      .populate('resort', 'name location starRating images')
+      .populate('room', 'roomType roomName price images');
 
     console.log('✅ Lead updated successfully');
 
@@ -135,6 +144,33 @@ export const updateLead = asyncHandler(async (req, res) => {
     console.error('❌ Error updating lead:', error.message);
     throw error;
   }
+});
+
+// @desc    Delete lead
+// @route   DELETE /api/bookings/lead/:id
+// @access  Private/Admin
+export const deleteLead = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.id);
+
+  if (!lead) {
+    res.status(404);
+    throw new Error('Lead not found');
+  }
+
+  await lead.deleteOne();
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'delete',
+    resource: 'lead',
+    resourceId: lead._id,
+    description: `Deleted lead: ${lead.guestName}`
+  });
+
+  res.json({
+    success: true,
+    message: 'Lead deleted successfully'
+  });
 });
 
 // ========== QUOTATION MANAGEMENT ==========
@@ -178,7 +214,8 @@ export const createQuotation = asyncHandler(async (req, res) => {
     validUntil,
     notes,
     terms,
-    lead
+    lead: leadId,
+    sendEmail: shouldSendEmail
   } = req.body;
 
   // Validate required fields
@@ -205,7 +242,7 @@ export const createQuotation = asyncHandler(async (req, res) => {
     validUntil,
     notes,
     terms,
-    lead,
+    lead: leadId,
     status: 'Draft',
     createdBy: req.user._id,
     versions: [{
@@ -227,12 +264,101 @@ export const createQuotation = asyncHandler(async (req, res) => {
   });
 
   // Update lead status to 'Quotation'
-  if (lead) {
-    await Lead.findByIdAndUpdate(lead, { status: 'Quotation' });
+  if (leadId) {
+    await Lead.findByIdAndUpdate(leadId, { status: 'Quotation' });
   }
 
+  // Populate quotation with full lead details including savedBookings and passengerDetails
   const populatedQuotation = await Quotation.findById(quotation._id)
-    .populate('lead');
+    .populate({
+      path: 'lead',
+      populate: [
+        { path: 'resort', select: 'name location starRating description amenities mealPlan images' },
+        { path: 'room', select: 'roomType roomName price description size bedType maxAdults maxChildren amenities images' }
+      ]
+    });
+
+  // Generate and send PDF if requested
+  if (shouldSendEmail) {
+    try {
+      console.log('📧 Generating PDF and sending email...');
+      
+      // Import PDF generator and email functions
+      const { generateQuotationPDF } = await import('../utils/pdfGenerator.js');
+      const { sendEmail } = await import('../config/email.js');
+      
+      // Generate PDF
+      const pdfBuffer = await generateQuotationPDF(populatedQuotation);
+      
+      // Send email with PDF attachment
+      await sendEmail({
+        to: email,
+        subject: `Your Travel Quotation ${quotationNumber} - Crown Voyages`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+            <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+              <h1 style="color: #D4AF37; margin: 0; font-size: 28px;">CROWN VOYAGES</h1>
+              <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 14px;">Luxury Travel & Resort Management</p>
+            </div>
+            
+            <div style="background-color: #ffffff; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+              <h2 style="color: #1a1a2e; margin-top: 0;">Dear ${customerName},</h2>
+              
+              <p style="color: #333; line-height: 1.6;">Thank you for your interest in our luxury travel services.</p>
+              
+              <p style="color: #333; line-height: 1.6;">Please find attached your personalized travel quotation <strong style="color: #D4AF37;">${quotationNumber}</strong> with comprehensive details of your selected properties, rooms, and pricing.</p>
+              
+              <div style="background-color: #f8f9fa; border-left: 4px solid #D4AF37; padding: 15px; margin: 20px 0;">
+                <h3 style="color: #1a1a2e; margin-top: 0; font-size: 16px;">Quotation Highlights:</h3>
+                <ul style="color: #666; line-height: 1.8; margin: 10px 0;">
+                  <li>Original Price: <strong>$${amount.toFixed(2)}</strong></li>
+                  ${discountValue > 0 ? `<li style="color: #2e7d32;">Discount: <strong>-$${discountValue.toFixed(2)}</strong></li>` : ''}
+                  <li style="color: #D4AF37; font-size: 18px;">Final Amount: <strong>$${finalAmount.toFixed(2)}</strong></li>
+                  ${validUntil ? `<li>Valid Until: <strong>${new Date(validUntil).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></li>` : ''}
+                </ul>
+              </div>
+              
+              <p style="color: #333; line-height: 1.6;">The attached PDF contains:</p>
+              <ul style="color: #666; line-height: 1.8;">
+                <li>Complete property and room details with images</li>
+                <li>Passenger information</li>
+                <li>Detailed pricing breakdown</li>
+                <li>Terms and conditions</li>
+              </ul>
+              
+              <p style="color: #333; line-height: 1.6;">Should you have any questions or wish to proceed with the booking, please don't hesitate to contact us.</p>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="mailto:info@crownvoyages.com" style="display: inline-block; background-color: #D4AF37; color: #1a1a2e; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Contact Us</a>
+              </div>
+              
+              <p style="color: #333; line-height: 1.6;">We look forward to making your travel dreams a reality!</p>
+              
+              <p style="color: #666; margin-top: 30px;">
+                Best regards,<br>
+                <strong style="color: #D4AF37;">Crown Voyages Team</strong>
+              </p>
+            </div>
+            
+            <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
+              <p>Email: info@crownvoyages.com | Phone: +1 (555) 123-4567</p>
+              <p>www.crownvoyages.com</p>
+            </div>
+          </div>
+        `,
+        attachments: [{
+          filename: `Quotation_${quotationNumber}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        }]
+      });
+      
+      console.log('✅ Quotation email sent successfully');
+    } catch (emailError) {
+      console.error('❌ Error sending quotation email:', emailError);
+      // Don't fail the request if email fails
+    }
+  }
 
   res.status(201).json({
     success: true,
@@ -433,7 +559,7 @@ export const getBookings = asyncHandler(async (req, res) => {
 
   const bookings = await Booking.find(query)
     .populate('resort', 'name location starRating images')
-    .populate('room', 'roomType price')
+    .populate('room', 'roomType roomName price images')
     .populate('createdBy', 'name')
     .sort({ createdAt: -1 });
 
@@ -449,8 +575,8 @@ export const getBookings = asyncHandler(async (req, res) => {
 // @access  Private
 export const getBookingById = asyncHandler(async (req, res) => {
   const booking = await Booking.findById(req.params.id)
-    .populate('resort')
-    .populate('room')
+    .populate('resort', 'name location starRating images')
+    .populate('room', 'roomType roomName price images')
     .populate('quotation')
     .populate('createdBy', 'name email');
 
@@ -503,11 +629,23 @@ export const updateBooking = asyncHandler(async (req, res) => {
     throw new Error('Booking not found');
   }
 
+  // Prepare update data
+  const updateData = { ...req.body };
+  
+  // Calculate balance if payment fields are being updated
+  if (updateData.totalAmount !== undefined || updateData.paidAmount !== undefined) {
+    const totalAmount = updateData.totalAmount !== undefined ? updateData.totalAmount : booking.totalAmount;
+    const paidAmount = updateData.paidAmount !== undefined ? updateData.paidAmount : (booking.paidAmount || 0);
+    updateData.balance = totalAmount - paidAmount;
+  }
+
   booking = await Booking.findByIdAndUpdate(
     req.params.id,
-    req.body,
+    updateData,
     { new: true, runValidators: true }
-  );
+  )
+    .populate('resort', 'name location starRating images')
+    .populate('room', 'roomType roomName price images');
 
   await ActivityLog.create({
     user: req.user._id,

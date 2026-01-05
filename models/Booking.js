@@ -84,7 +84,49 @@ const bookingSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  // Room configurations per room
+  roomConfigs: [{
+    adults: { type: Number, required: true },
+    children: { type: Number, default: 0 },
+    childrenAges: [{ type: Number }]
+  }],
+  // Saved bookings summary (for multiple room bookings)
+  savedBookings: [{
+    roomId: { type: mongoose.Schema.Types.ObjectId, ref: 'Room' },
+    roomName: { type: String },
+    roomType: { type: String },
+    roomDescription: { type: String },
+    roomSize: { type: Number },
+    roomBedType: { type: String },
+    roomMaxAdults: { type: Number },
+    roomMaxChildren: { type: Number },
+    roomAmenities: [{ type: String }],
+    roomImages: [{ type: String }],
+    resortId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resort' },
+    resortName: { type: String },
+    resortLocation: { type: String },
+    resortStarRating: { type: Number },
+    resortDescription: { type: String },
+    resortAmenities: [{ type: String }],
+    resortMealPlan: { type: String },
+    resortImages: [{ type: String }],
+    checkIn: { type: Date },
+    checkOut: { type: Date },
+    mealPlan: { type: String },
+    roomConfigs: [{
+      adults: { type: Number },
+      children: { type: Number },
+      childrenAges: [{ type: Number }]
+    }],
+    totalRooms: { type: Number },
+    totalAdults: { type: Number },
+    totalChildren: { type: Number }
+  }],
+  // Passenger details
   passengerDetails: [{
+    bookingIndex: { type: Number },
+    bookingName: { type: String },
+    roomName: { type: String },
     roomNumber: { type: Number },
     adults: [{
       name: { type: String },

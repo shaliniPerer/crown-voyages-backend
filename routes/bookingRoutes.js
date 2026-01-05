@@ -4,6 +4,7 @@ import {
   createLead,
   getLead,
   updateLead,
+  deleteLead,
   getQuotations,
   createQuotation,
   createQuotationVersion,
@@ -43,6 +44,7 @@ router.get('/leads', getLeads);
 router.post('/lead', createLead);
 router.get('/lead/:id', getLead);
 router.patch('/lead/:id', updateLead);
+router.delete('/lead/:id', deleteLead);
 
 // Quotation routes (must come before generic /:id routes)
 router.get('/quotations', getQuotations);
