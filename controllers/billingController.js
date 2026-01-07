@@ -7,7 +7,7 @@ import Lead from '../models/Lead.js';
 import ActivityLog from '../models/ActivityLog.js';
 import { sendEmail } from '../config/email.js';
 import { invoiceEmailTemplate, paymentReceiptTemplate } from '../utils/emailTemplates.js';
-import { generateInvoicePDF, generateReceiptPDF } from '../utils/pdfGenerator.js';
+import { generateInvoicePDF, generateReceiptPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator.js';
 
 // ========== INVOICE MANAGEMENT ==========
 
@@ -163,12 +163,63 @@ export const sendInvoiceEmail = asyncHandler(async (req, res) => {
     throw new Error('Invoice not found');
   }
 
-  const emailHtml = invoiceEmailTemplate(invoice);
+  // Generate PDF
+  const pdfBuffer = await generateInvoicePDF(invoice);
+
+  const customerName = invoice.customerName || 'Valued Client';
+  const invoiceNumber = invoice.invoiceNumber;
+  const amount = invoice.finalAmount;
+  const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Due on Receipt';
 
   await sendEmail({
     to: invoice.email,
-    subject: `Invoice ${invoice.invoiceNumber}`,
-    html: emailHtml
+    subject: `Invoice ${invoiceNumber} - Crown Voyages`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+        <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1 style="color: #D4AF37; margin: 0; font-size: 28px;">CROWN VOYAGES</h1>
+          <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 14px;">Luxury Travel & Resort Management</p>
+        </div>
+        
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <h2 style="color: #1a1a2e; margin-top: 0;">Dear ${customerName},</h2>
+          
+          <p style="color: #333; line-height: 1.6;">Please find attached invoice <strong style="color: #D4AF37;">${invoiceNumber}</strong> for your upcoming travel.</p>
+          
+          <div style="background-color: #f8f9fa; border-left: 4px solid #D4AF37; padding: 15px; margin: 20px 0;">
+            <h3 style="color: #1a1a2e; margin-top: 0; font-size: 16px;">Invoice Summary:</h3>
+            <ul style="color: #666; line-height: 1.8; margin: 10px 0;">
+              <li>Invoice Number: <strong>${invoiceNumber}</strong></li>
+              <li>Due Date: <strong>${dueDate}</strong></li>
+              <li style="color: #D4AF37; font-size: 18px;">Total Amount: <strong>$${amount.toFixed(2)}</strong></li>
+            </ul>
+          </div>
+          
+          <p style="color: #333; line-height: 1.6;">The attached PDF contains complete details of charges and payment instructions.</p>
+          
+          <p style="color: #333; line-height: 1.6;">If you have any questions regarding this invoice, please do not hesitate to contact us.</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="mailto:info@crownvoyages.com" style="display: inline-block; background-color: #D4AF37; color: #1a1a2e; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Contact Finance Team</a>
+          </div>
+          
+          <p style="color: #666; margin-top: 30px;">
+            Best regards,<br>
+            <strong style="color: #D4AF37;">Crown Voyages Team</strong>
+          </p>
+        </div>
+        
+        <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
+          <p>Email: info@crownvoyages.com | Phone: +1 (555) 123-4567</p>
+          <p>www.crownvoyages.com</p>
+        </div>
+      </div>
+    `,
+    attachments: [{
+      filename: `Invoice_${invoiceNumber}.pdf`,
+      content: pdfBuffer,
+      contentType: 'application/pdf'
+    }]
   });
 
   invoice.status = 'Sent';
@@ -203,12 +254,63 @@ export const sendPaymentReceiptEmail = asyncHandler(async (req, res) => {
   }
 
   const invoice = payment.invoice;
-  const receiptHtml = paymentReceiptTemplate(payment, invoice);
+  
+  // Generate PDF
+  const pdfBuffer = await generatePaymentReceiptPDF(payment, invoice);
+
+  const customerName = invoice.customerName || 'Valued Client';
+  const paymentId = payment.paymentId;
+  const amount = payment.amount;
+  const paymentDate = new Date(payment.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   await sendEmail({
     to: invoice.email,
-    subject: `Payment Receipt ${payment.paymentId}`,
-    html: receiptHtml
+    subject: `Payment Receipt ${paymentId} - Crown Voyages`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+        <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1 style="color: #D4AF37; margin: 0; font-size: 28px;">CROWN VOYAGES</h1>
+          <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 14px;">Luxury Travel & Resort Management</p>
+        </div>
+        
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <h2 style="color: #1a1a2e; margin-top: 0;">Dear ${customerName},</h2>
+          
+          <p style="color: #333; line-height: 1.6;">Thank you for your payment. We have successfully received your transaction.</p>
+          
+          <div style="background-color: #f8f9fa; border-left: 4px solid #D4AF37; padding: 15px; margin: 20px 0;">
+            <h3 style="color: #1a1a2e; margin-top: 0; font-size: 16px;">Payment Details:</h3>
+            <ul style="color: #666; line-height: 1.8; margin: 10px 0;">
+              <li>Receipt Number: <strong>${paymentId}</strong></li>
+              <li>Date: <strong>${paymentDate}</strong></li>
+              <li>Method: <strong>${payment.method}</strong></li>
+              <li style="color: #D4AF37; font-size: 18px;">Amount Paid: <strong>$${amount.toFixed(2)}</strong></li>
+            </ul>
+          </div>
+          
+          <p style="color: #333; line-height: 1.6;">Please find attached the official receipt for your records.</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="mailto:info@crownvoyages.com" style="display: inline-block; background-color: #D4AF37; color: #1a1a2e; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Contact Us</a>
+          </div>
+          
+          <p style="color: #666; margin-top: 30px;">
+            Best regards,<br>
+            <strong style="color: #D4AF37;">Crown Voyages Team</strong>
+          </p>
+        </div>
+        
+        <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
+          <p>Email: info@crownvoyages.com | Phone: +1 (555) 123-4567</p>
+          <p>www.crownvoyages.com</p>
+        </div>
+      </div>
+    `,
+    attachments: [{
+      filename: `Receipt_${paymentId}.pdf`,
+      content: pdfBuffer,
+      contentType: 'application/pdf'
+    }]
   });
 
   await ActivityLog.create({

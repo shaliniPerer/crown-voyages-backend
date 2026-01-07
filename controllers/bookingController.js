@@ -851,45 +851,66 @@ export const sendInvoiceEmail = asyncHandler(async (req, res) => {
     throw new Error('Invoice not found');
   }
 
-  const emailHtml = `
-    <h2>Invoice ${invoice.invoiceNumber}</h2>
-    <p>Dear ${invoice.customerName},</p>
-    <p>Please find below the details of your invoice:</p>
-    <table style="width: 100%; border-collapse: collapse;">
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Invoice Number:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">${invoice.invoiceNumber}</td>
-      </tr>
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Base Price:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">$${(invoice.amount || 0).toFixed(2)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Discount:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">-$${(invoice.discountValue || 0).toFixed(2)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Final Amount:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">$${(invoice.finalAmount || 0).toFixed(2)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Due Date:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">${invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}</td>
-      </tr>
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Status:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">${invoice.status}</td>
-      </tr>
-    </table>
-    ${invoice.notes ? `<p><strong>Notes:</strong> ${invoice.notes}</p>` : ''}
-    <p>Thank you for your business!</p>
+  // Generate PDF
+  const pdfBuffer = await generateInvoicePDF(invoice);
+
+  const customerName = invoice.customerName || 'Valued Client';
+  const invoiceNumber = invoice.invoiceNumber;
+  const amount = invoice.finalAmount;
+  const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Due on Receipt';
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+      <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: #D4AF37; margin: 0; font-size: 28px;">CROWN VOYAGES</h1>
+        <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 14px;">Luxury Travel & Resort Management</p>
+      </div>
+      
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h2 style="color: #1a1a2e; margin-top: 0;">Dear ${customerName},</h2>
+        
+        <p style="color: #333; line-height: 1.6;">Please find attached invoice <strong style="color: #D4AF37;">${invoiceNumber}</strong> for your upcoming travel.</p>
+        
+        <div style="background-color: #f8f9fa; border-left: 4px solid #D4AF37; padding: 15px; margin: 20px 0;">
+          <h3 style="color: #1a1a2e; margin-top: 0; font-size: 16px;">Invoice Summary:</h3>
+          <ul style="color: #666; line-height: 1.8; margin: 10px 0;">
+            <li>Invoice Number: <strong>${invoiceNumber}</strong></li>
+            <li>Due Date: <strong>${dueDate}</strong></li>
+            <li style="color: #D4AF37; font-size: 18px;">Total Amount: <strong>$${amount.toFixed(2)}</strong></li>
+          </ul>
+        </div>
+        
+        <p style="color: #333; line-height: 1.6;">The attached PDF contains complete details of charges and payment instructions.</p>
+        
+        <p style="color: #333; line-height: 1.6;">If you have any questions regarding this invoice, please do not hesitate to contact us.</p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="mailto:info@crownvoyages.com" style="display: inline-block; background-color: #D4AF37; color: #1a1a2e; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Contact Finance Team</a>
+        </div>
+        
+        <p style="color: #666; margin-top: 30px;">
+          Best regards,<br>
+          <strong style="color: #D4AF37;">Crown Voyages Team</strong>
+        </p>
+      </div>
+      
+      <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
+        <p>Email: info@crownvoyages.com | Phone: +1 (555) 123-4567</p>
+        <p>www.crownvoyages.com</p>
+      </div>
+    </div>
   `;
 
   try {
     await sendEmail({
       to: invoice.email,
       subject: `Invoice ${invoice.invoiceNumber} - Crown Voyages`,
-      html: emailHtml
+      html: html,
+      attachments: [{
+        filename: `Invoice_${invoiceNumber}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }]
     });
   } catch (emailError) {
     console.warn(`⚠️ Email sending skipped: ${emailError.message}`);
@@ -925,41 +946,65 @@ export const sendReceiptEmail = asyncHandler(async (req, res) => {
     throw new Error('Receipt not found');
   }
 
-  const emailHtml = `
-    <h2>Receipt ${receipt.receiptNumber}</h2>
-    <p>Dear ${receipt.customerName},</p>
-    <p>Thank you for your payment. Please find below the details of your receipt:</p>
-    <table style="width: 100%; border-collapse: collapse;">
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Receipt Number:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">${receipt.receiptNumber}</td>
-      </tr>
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Base Price:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">$${(receipt.amount || 0).toFixed(2)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Discount:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">-$${(receipt.discountValue || 0).toFixed(2)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Final Amount:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">$${(receipt.finalAmount || 0).toFixed(2)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;"><strong>Payment Method:</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">${receipt.paymentMethod || 'Cash'}</td>
-      </tr>
-    </table>
-    ${receipt.notes ? `<p><strong>Notes:</strong> ${receipt.notes}</p>` : ''}
-    <p>Thank you for choosing Crown Voyages!</p>
+  // Generate PDF
+  const pdfBuffer = await generateReceiptPDF(receipt);
+
+  const customerName = receipt.customerName || 'Valued Client';
+  const receiptNumber = receipt.receiptNumber;
+  const amount = receipt.finalAmount;
+  const paymentDate = new Date(receipt.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+      <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: #D4AF37; margin: 0; font-size: 28px;">CROWN VOYAGES</h1>
+        <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 14px;">Luxury Travel & Resort Management</p>
+      </div>
+      
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h2 style="color: #1a1a2e; margin-top: 0;">Dear ${customerName},</h2>
+        
+        <p style="color: #333; line-height: 1.6;">Thank you for your payment. We have successfully received your transaction.</p>
+        
+        <div style="background-color: #f8f9fa; border-left: 4px solid #D4AF37; padding: 15px; margin: 20px 0;">
+          <h3 style="color: #1a1a2e; margin-top: 0; font-size: 16px;">Receipt Summary:</h3>
+          <ul style="color: #666; line-height: 1.8; margin: 10px 0;">
+            <li>Receipt Number: <strong>${receiptNumber}</strong></li>
+            <li>Date: <strong>${paymentDate}</strong></li>
+            <li>Method: <strong>${receipt.paymentMethod || 'Cash'}</strong></li>
+            <li style="color: #D4AF37; font-size: 18px;">Amount Paid: <strong>$${amount.toFixed(2)}</strong></li>
+          </ul>
+        </div>
+        
+        <p style="color: #333; line-height: 1.6;">Please find attached the official receipt for your records.</p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="mailto:info@crownvoyages.com" style="display: inline-block; background-color: #D4AF37; color: #1a1a2e; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Contact Us</a>
+        </div>
+        
+        <p style="color: #666; margin-top: 30px;">
+          Best regards,<br>
+          <strong style="color: #D4AF37;">Crown Voyages Team</strong>
+        </p>
+      </div>
+      
+      <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
+        <p>Email: info@crownvoyages.com | Phone: +1 (555) 123-4567</p>
+        <p>www.crownvoyages.com</p>
+      </div>
+    </div>
   `;
 
   try {
     await sendEmail({
       to: receipt.email,
       subject: `Receipt ${receipt.receiptNumber} - Crown Voyages`,
-      html: emailHtml
+      html: html,
+      attachments: [{
+        filename: `Receipt_${receiptNumber}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }]
     });
   } catch (emailError) {
     console.warn(`⚠️ Email sending skipped: ${emailError.message}`);
