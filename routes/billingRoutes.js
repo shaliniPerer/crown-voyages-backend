@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  getBillingStats,
   getInvoices,
   getInvoiceById,
   createInvoice,
@@ -22,6 +23,9 @@ const router = express.Router();
 
 // All billing routes require authentication
 router.use(protect);
+
+// Stats routes
+router.get('/stats', getBillingStats);
 
 // Invoice routes
 router.get('/invoices', getInvoices);

@@ -92,6 +92,12 @@ export const generateQuotationPDF = async (quotation) => {
 
       // --- CLIENT & QUOTE INFO ---
       doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('PREPARED FOR', 40, doc.y);
+      
+      const bookingRef = quotation.lead?.booking?.bookingNumber;
+      if (bookingRef) {
+          doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textLight).text(`Booking Ref: ${bookingRef}`, 40, doc.y);
+      }
+      
       doc.moveDown(0.5);
       doc.fontSize(16).font('Helvetica-Bold').fillColor(tw.textDark).text(quotation.customerName);
       doc.fontSize(12).font('Helvetica').fillColor(tw.textLight).text(quotation.email);
@@ -644,7 +650,7 @@ export const generateInvoicePDF = async (invoice) => {
 
       // Invoice Title
       doc.fontSize(18).font('Helvetica-Bold').fillColor(tw.textDark).text('INVOICE', 40, 130, { align: 'center' });
-      doc.fontSize(12).font('Helvetica').fillColor(tw.textLight).text(`#${invoice.invoiceNumber}`, 40, 155, { align: 'center' });
+      doc.fontSize(12).font('Helvetica').fillColor(tw.textLight).text(invoice.invoiceNumber, 40, 155, { align: 'center' });
       doc.moveDown(2);
 
       // Two columns: Bill To and Invoice Info
@@ -653,6 +659,13 @@ export const generateInvoicePDF = async (invoice) => {
 
       // Bill To
       doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('Bill To:', leftColumn);
+      
+      const bookingRef = invoice.lead?.booking?.bookingNumber || invoice.booking?.bookingNumber;
+      if (bookingRef) {
+         doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textLight).text(`Booking Ref: ${bookingRef}`, leftColumn);
+         doc.moveDown(0.2);
+      }
+
       doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
       doc.text(invoice.customerName, leftColumn);
       doc.text(invoice.email, leftColumn);
@@ -701,57 +714,59 @@ export const generateInvoicePDF = async (invoice) => {
       }
 
       // Totals
-      const totalsX = 350;
-      let totalsY = doc.y;
+      const totalsWidth = 300;
+      const totalsX = (595 - totalsWidth) / 2;
+      let totalsY = doc.y + 20;
 
       doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
       doc.text('Base Price:', totalsX, totalsY);
-      doc.text(`$${(invoice.amount || 0).toFixed(2)}`, 500, totalsY, { align: 'right' });
+      doc.text(`$${(invoice.amount || 0).toFixed(2)}`, totalsX, totalsY, { align: 'right', width: totalsWidth });
       totalsY += 20;
 
       if (invoice.discountValue > 0) {
         doc.text('Discount:', totalsX, totalsY);
-        doc.text(`-$${(invoice.discountValue || 0).toFixed(2)}`, 500, totalsY, { align: 'right' });
+        doc.text(`-$${(invoice.discountValue || 0).toFixed(2)}`, totalsX, totalsY, { align: 'right', width: totalsWidth });
         totalsY += 20;
       }
 
       doc.strokeColor(tw.border).lineWidth(1);
-      doc.moveTo(totalsX, totalsY).lineTo(555, totalsY).stroke();
+      doc.moveTo(totalsX, totalsY).lineTo(totalsX + totalsWidth, totalsY).stroke();
       totalsY += 10;
 
       doc.fontSize(14).font('Helvetica-Bold').fillColor(tw.primary);
       doc.text('Total:', totalsX, totalsY);
-      doc.text(`$${(invoice.finalAmount || 0).toFixed(2)}`, 500, totalsY, { align: 'right' });
+      doc.text(`$${(invoice.finalAmount || 0).toFixed(2)}`, totalsX, totalsY, { align: 'right', width: totalsWidth });
       totalsY += 30;
 
-      // Status Badge
-      const statusColor = invoice.status === 'Paid' ? '#10B981' : '#EF4444';
-      doc.roundedRect(totalsX, totalsY, 150, 25, 12).fill(statusColor);
-      doc.fillColor(tw.white).fontSize(10).text(invoice.status.toUpperCase(), totalsX, totalsY + 8, { width: 150, align: 'center' });
+      // Status Badge removed
 
       // Notes
       if (invoice.notes) {
-        doc.y = totalsY + 50;
+        doc.y = totalsY + 20;
         doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('Notes:', leftColumn);
         doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text(invoice.notes, leftColumn);
       }
 
       // --- FOOTER SECTION ---
-      let footerY = doc.page.height - 80;
-      if (doc.y > footerY - 20) {
-         doc.addPage();
-         footerY = doc.page.height - 80;
+      // Ensure footer fits
+      if (doc.y + 80 > doc.page.height - 50) {
+        doc.addPage();
+        doc.y = 40;
+      } else {
+        doc.moveDown(1);
       }
-
+      
+      const footerStartY = doc.y;
+      
       // Divider
-      doc.moveTo(40, footerY).lineTo(555, footerY).strokeColor(tw.border).lineWidth(1).stroke();
+      doc.moveTo(40, footerStartY).lineTo(555, footerStartY).strokeColor(tw.border).lineWidth(1).stroke();
       
       // Crown Voyages Footer Details
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('Crown Voyages', 40, footerY + 10, { align: 'center', width: 515 });
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('Crown Voyages', 40, footerStartY + 10, { align: 'center', width: 515 });
       doc.fontSize(8).font('Helvetica').fillColor(tw.textLight)
-         .text('123 Luxury Ave, Suite 100, New York, NY 10001', 40, footerY + 25, { align: 'center', width: 515 });
-      doc.text('www.crownvoyages.com | concierge@crownvoyages.com', 40, footerY + 35, { align: 'center', width: 515 });
-      doc.text('Thank you for choosing us for your luxury travel needs.', 40, footerY + 48, { align: 'center', width: 515 });
+         .text('123 Luxury Ave, Suite 100, New York, NY 10001', 40, footerStartY + 25, { align: 'center', width: 515 });
+      doc.text('www.crownvoyages.com | concierge@crownvoyages.com', 40, footerStartY + 35, { align: 'center', width: 515 });
+      doc.text('Thank you for choosing us for your luxury travel needs.', 40, footerStartY + 48, { align: 'center', width: 515 });
 
       doc.end();
     } catch (error) {
@@ -921,85 +936,90 @@ export const generateReceiptPDF = async (receipt) => {
 
       // Receipt Title
       doc.fontSize(18).font('Helvetica-Bold').fillColor(tw.textDark).text('OFFICIAL RECEIPT', 40, 130, { align: 'center' });
-      doc.fontSize(12).font('Helvetica').fillColor(tw.textLight).text(`#${receipt.receiptNumber}`, 40, 155, { align: 'center' });
+      doc.fontSize(12).font('Helvetica').fillColor(tw.textLight).text(receipt.receiptNumber, 40, 155, { align: 'center' });
       doc.moveDown(2);
 
-      // Amount Display
-      doc.roundedRect(150, doc.y, 295, 80, 10).fill(tw.primary);
-      doc.fillColor(tw.white);
-      doc.fontSize(36).font('Helvetica-Bold').text(`$${(receipt.finalAmount || 0).toFixed(2)}`, 150, doc.y + 20, { width: 295, align: 'center' });
-      doc.fontSize(12).font('Helvetica').text('Total Received', 150, doc.y + 60, { width: 295, align: 'center' });
-      doc.moveDown(5);
-      doc.y += 40;
-
-      // Two columns
+      // Two columns: Received From and Receipt Info
       const leftColumn = 40;
-      const rightColumn = 300;
+      const rightColumn = 350;
 
-      // Customer Info
-      doc.fontSize(14).font('Helvetica-Bold').fillColor(tw.primary).text('Received From:', leftColumn);
+      // Received From
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('Received From:', leftColumn);
+      
+      const bookingRef = receipt.lead?.booking?.bookingNumber;
+      if (bookingRef) {
+         doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textLight).text(`Booking Ref: ${bookingRef}`, leftColumn);
+         doc.moveDown(0.2);
+      }
+      
       doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
       doc.text(receipt.customerName, leftColumn);
       doc.text(receipt.email, leftColumn);
       if (receipt.phone) doc.text(receipt.phone, leftColumn);
 
       // Receipt Info
-      const infoY = doc.y - 45; 
-      doc.fontSize(14).font('Helvetica-Bold').fillColor(tw.primary).text('Details:', rightColumn, 260); // Manual align or calc
-      // Actually let's use current doc.y if parallel logic is hard without tracking y
-      // But resetting doc.y to match leftColumn block:
-      doc.y = 280; // approximate
-      
+      // Align top with Received From section title which is at Y ~175 (130+25+2linegaps)
+      // Actually Invoice uses hardcoded 190.
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('Receipt Details:', rightColumn, 190); 
       doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
       doc.text(`Date: ${new Date(receipt.createdAt).toLocaleDateString()}`, rightColumn);
       doc.text(`Method: ${receipt.paymentMethod}`, rightColumn);
-      doc.text(`Status: ${receipt.status}`, rightColumn);
 
       doc.moveDown(4);
-      doc.y += 50;
+      doc.y = 260;
 
       // Pricing Details
-      const totalsX = 350;
+      // Center the totals
+      const totalsWidth = 300;
+      const totalsX = (595 - totalsWidth) / 2;
       let totalsY = doc.y;
 
       doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
       doc.text('Base Amount:', totalsX, totalsY);
-      doc.text(`$${(receipt.amount || 0).toFixed(2)}`, 500, totalsY, { align: 'right' });
+      doc.text(`$${(receipt.amount || 0).toFixed(2)}`, totalsX, totalsY, { align: 'right', width: totalsWidth });
       totalsY += 20;
 
       if (receipt.discountValue > 0) {
         doc.text('Discount:', totalsX, totalsY);
-        doc.text(`-$${(receipt.discountValue || 0).toFixed(2)}`, 500, totalsY, { align: 'right' });
+        doc.text(`-$${(receipt.discountValue || 0).toFixed(2)}`, totalsX, totalsY, { align: 'right', width: totalsWidth });
         totalsY += 20;
       }
 
       doc.strokeColor(tw.border).lineWidth(1);
-      doc.moveTo(totalsX, totalsY).lineTo(555, totalsY).stroke();
+      doc.moveTo(totalsX, totalsY).lineTo(totalsX + totalsWidth, totalsY).stroke();
       totalsY += 10;
 
       doc.fontSize(14).font('Helvetica-Bold').fillColor(tw.primary);
       doc.text('Total Received:', totalsX, totalsY);
-      doc.text(`$${(receipt.finalAmount || 0).toFixed(2)}`, 500, totalsY, { align: 'right' });
+      doc.text(`$${(receipt.finalAmount || 0).toFixed(2)}`, totalsX, totalsY, { align: 'right', width: totalsWidth });
 
       // Notes
       if (receipt.notes) {
-        doc.y = totalsY + 50;
+        doc.y = totalsY + 30;
         doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('Notes:', leftColumn);
         doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text(receipt.notes, leftColumn);
       }
 
       // --- FOOTER SECTION ---
-      let footerY = doc.page.height - 80;
+      // Ensure footer fits
+      if (doc.y + 80 > doc.page.height - 50) {
+        doc.addPage();
+        doc.y = 40;
+      } else {
+        doc.moveDown(1);
+      }
+      
+      const footerStartY = doc.y;
       
       // Divider
-      doc.moveTo(40, footerY).lineTo(555, footerY).strokeColor(tw.border).lineWidth(1).stroke();
+      doc.moveTo(40, footerStartY).lineTo(555, footerStartY).strokeColor(tw.border).lineWidth(1).stroke();
       
       // Crown Voyages Footer Details
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('Crown Voyages', 40, footerY + 10, { align: 'center', width: 515 });
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('Crown Voyages', 40, footerStartY + 10, { align: 'center', width: 515 });
       doc.fontSize(8).font('Helvetica').fillColor(tw.textLight)
-         .text('123 Luxury Ave, Suite 100, New York, NY 10001', 40, footerY + 25, { align: 'center', width: 515 });
-      doc.text('www.crownvoyages.com | concierge@crownvoyages.com', 40, footerY + 35, { align: 'center', width: 515 });
-      doc.text('Thank you for choosing us for your luxury travel needs.', 40, footerY + 48, { align: 'center', width: 515 });
+         .text('123 Luxury Ave, Suite 100, New York, NY 10001', 40, footerStartY + 25, { align: 'center', width: 515 });
+      doc.text('www.crownvoyages.com | concierge@crownvoyages.com', 40, footerStartY + 35, { align: 'center', width: 515 });
+      doc.text('Thank you for choosing us for your luxury travel needs.', 40, footerStartY + 48, { align: 'center', width: 515 });
 
       doc.end();
     } catch (error) {
@@ -1012,26 +1032,114 @@ export const generateReceiptPDF = async (receipt) => {
 export const generateReportPDF = async (title, data, options = {}) => {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ margin: 50 });
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
       const chunks = [];
 
       doc.on('data', chunk => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
 
+      // Colors
+      const tw = {
+        primary: '#D4AF37',
+        text: '#1F2937',
+        textLight: '#6B7280',
+        border: '#E5E7EB',
+        bg: '#F9FAFB'
+      };
+
       // Header
-      doc.fontSize(20).fillColor('#D4AF37').text(title.toUpperCase(), { align: 'center' });
-      doc.moveDown(0.5);
-      doc.fontSize(10).fillColor('#666').text(`Generated on ${new Date().toLocaleDateString()}`, { align: 'center' });
-      
-      if (options.period) {
-        doc.text(`Period: ${options.period}`, { align: 'center' });
-      }
+      doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
+      doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text('Luxury Travel Management', 40, 65);
+
+      // Report Title
+      doc.moveDown(2);
+      doc.fontSize(18).font('Helvetica-Bold').fillColor(tw.text).text(title.toUpperCase(), 40, doc.y, { align: 'center' });
+      doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text(`Generated: ${new Date().toLocaleDateString()} | Period: ${options.period || 'All Time'}`, { align: 'center' });
       
       doc.moveDown(2);
 
-      // Report content (simplified - would be expanded based on report type)
-      doc.fontSize(12).fillColor('#000');
-      doc.text(JSON.stringify(data, null, 2));
+      // Table Header logic
+      const tableTop = doc.y;
+      const colWidths = [100, 150, 100, 100, 80]; // Adjust based on columns
+      const startX = 40;
+      let y = tableTop;
+
+      const drawRow = (row, y, isHeader = false) => {
+        const bg = isHeader ? tw.primary : (y % 2 === 0 ? tw.bg : '#FFF');
+        if (isHeader) {
+          doc.rect(startX, y - 5, 515, 20).fill(bg);
+          doc.fillColor('#FFF').font('Helvetica-Bold').fontSize(10);
+        } else {
+          doc.fillColor(tw.text).font('Helvetica').fontSize(9);
+          doc.rect(startX, y - 5, 515, 20).strokeColor(tw.border).stroke();
+        }
+
+        let x = startX + 5;
+        row.forEach((text, i) => {
+          doc.text(text, x, y, { width: colWidths[i], align: 'left', lineBreak: false, ellipsis: true });
+          x += colWidths[i];
+        });
+      };
+
+      // Define columns based on report type (inferred from first data item or passed options)
+      const headers = options.headers || ['ID', 'Customer', 'Date', 'Amount', 'Status'];
+      
+      drawRow(headers, y, true);
+      y += 25;
+
+      data.forEach((item, index) => {
+        if (y > doc.page.height - 50) {
+          doc.addPage();
+          y = 50;
+          drawRow(headers, y, true);
+          y += 25;
+        }
+
+        // Map data to columns (This assumes data is already formatted or we map it here)
+        // We'll expect 'data' to be an array of objects, and we map based on headers.
+        // For simplicity, let's assume the controller formatted the data as arrays of strings:
+        // OR we handle it here if it's raw objects. 
+        // Let's assume passed data is raw objects and we map them.
+        
+        let rowData = [];
+        if (title.toLowerCase().includes('quotation')) {
+           rowData = [
+             item.quotationNumber,
+             item.customerName,
+             new Date(item.createdAt).toLocaleDateString(),
+             `$${(item.finalAmount || 0).toLocaleString()}`,
+             item.status || 'Draft'
+           ];
+        } else if (title.toLowerCase().includes('invoice')) {
+           rowData = [
+             item.invoiceNumber,
+             item.customerName,
+             new Date(item.createdAt).toLocaleDateString(),
+             `$${(item.finalAmount || 0).toLocaleString()}`,
+             item.status || 'Draft'
+           ];
+        } else if (title.toLowerCase().includes('receipt')) {
+           rowData = [
+             item.receiptNumber,
+             item.customerName,
+             new Date(item.createdAt).toLocaleDateString(),
+             `$${(item.finalAmount || 0).toLocaleString()}`,
+             item.paymentMethod || 'Cash'
+           ];
+        } else {
+             // Fallback for generic data
+             rowData = Object.values(item).slice(0, 5).map(v => String(v));
+        }
+
+        drawRow(rowData, y);
+        y += 25;
+      });
+
+      // Summary
+      doc.moveDown(2);
+      const totalAmount = data.reduce((sum, item) => sum + (item.finalAmount || item.amount || 0), 0);
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.text).text(`Total Records: ${data.length}`, 40);
+      doc.text(`Total Value: $${totalAmount.toLocaleString()}`, 40);
 
       doc.end();
     } catch (error) {

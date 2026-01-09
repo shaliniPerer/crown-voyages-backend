@@ -17,13 +17,18 @@ import {
   createBooking,
   updateBooking,
   deleteBooking,
+  getInvoices,
   createInvoice,
   sendInvoiceEmail,
   exportInvoicePDF,
   createReceipt,
   sendReceiptEmail,
   exportReceiptPDF,
-  getReceipts
+  getReceipts,
+  getReports,
+  deleteQuotation,
+  deleteInvoice,
+  deleteReceipt
 } from '../controllers/bookingController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { authorize, isAdmin } from '../middleware/roleMiddleware.js';
@@ -54,15 +59,20 @@ router.patch('/quotation/:id/status', updateQuotationStatus);
 router.post('/quotation/:id/send-email', sendQuotationEmail);
 router.get('/quotation/:id/pdf', exportQuotationPDF);
 router.post('/quotation/:id/convert', convertToBooking);
+router.delete('/quotation/:id', deleteQuotation);
 
 // Invoice and Receipt routes
+router.get('/reports', getReports);
+router.get('/invoices', getInvoices);
 router.post('/invoice', createInvoice);
 router.get('/invoice/:id/pdf', exportInvoicePDF);
 router.post('/invoice/:id/send-email', sendInvoiceEmail);
+router.delete('/invoice/:id', deleteInvoice);
 router.get('/receipts', getReceipts);
 router.post('/receipt', createReceipt);
 router.get('/receipt/:id/pdf', exportReceiptPDF);
 router.post('/receipt/:id/send-email', sendReceiptEmail);
+router.delete('/receipt/:id', deleteReceipt);
 
 // Booking routes (generic routes go last)
 router.post('/', createBooking);

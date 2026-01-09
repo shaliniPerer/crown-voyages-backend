@@ -36,6 +36,7 @@ const activityLogSchema = new mongoose.Schema({
       'payment',
       'lead',
       'auth',
+      'receipt',
       'other'
     ]
   },

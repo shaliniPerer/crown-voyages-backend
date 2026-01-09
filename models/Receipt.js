@@ -4,7 +4,7 @@ const receiptSchema = new mongoose.Schema({
   receiptNumber: {
     type: String,
     unique: true,
-    required: true
+    required: false
   },
   invoice: {
     type: mongoose.Schema.Types.ObjectId,
@@ -21,7 +21,7 @@ const receiptSchema = new mongoose.Schema({
   },
   email: {
     type: String,
-    required: [true, 'Please provide email'],
+    // required: [true, 'Please provide email'],
     trim: true,
     lowercase: true
   },
@@ -73,9 +73,15 @@ const receiptSchema = new mongoose.Schema({
 
 // Auto-increment receipt number
 receiptSchema.pre('save', async function(next) {
-  if (this.isNew) {
+  if (this.isNew && !this.receiptNumber) {
     const lastReceipt = await mongoose.model('Receipt').findOne().sort({ createdAt: -1 });
-    const lastNumber = lastReceipt?.receiptNumber ? parseInt(lastReceipt.receiptNumber.replace('REC-', '')) : 0;
+    let lastNumber = 0;
+    if (lastReceipt && lastReceipt.receiptNumber) {
+      const parsed = parseInt(lastReceipt.receiptNumber.replace('REC-', ''));
+      if (!isNaN(parsed)) {
+        lastNumber = parsed;
+      }
+    }
     this.receiptNumber = `REC-${String(lastNumber + 1).padStart(6, '0')}`;
   }
   next();

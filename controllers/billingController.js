@@ -5,9 +5,78 @@ import Reminder from '../models/Reminder.js';
 import Booking from '../models/Booking.js';
 import Lead from '../models/Lead.js';
 import ActivityLog from '../models/ActivityLog.js';
+import Quotation from '../models/Quotation.js';
+import Receipt from '../models/Receipt.js';
 import { sendEmail } from '../config/email.js';
 import { invoiceEmailTemplate, paymentReceiptTemplate } from '../utils/emailTemplates.js';
 import { generateInvoicePDF, generateReceiptPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator.js';
+
+// ========== STATS MANAGEMENT ==========
+
+// @desc    Get billing statistics
+// @route   GET /api/billing/stats
+// @access  Private
+export const getBillingStats = asyncHandler(async (req, res) => {
+  const { period = 'monthly' } = req.query;
+  const now = new Date();
+  let startDate;
+
+  switch (period) {
+    case 'daily':
+      startDate = new Date(now.setHours(0,0,0,0));
+      break;
+    case 'weekly':
+      // Get start of current week (assuming Monday start or Sunday, let's use standard Sunday=0)
+      const day = now.getDay(); 
+      const diff = now.getDate() - day; // Sunday start
+      startDate = new Date(now.setDate(diff));
+      startDate.setHours(0,0,0,0);
+      break;
+    case 'monthly':
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case 'annually':
+      startDate = new Date(now.getFullYear(), 0, 1);
+      break;
+    default:
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  const matchStage = { $match: { createdAt: { $gte: startDate } } };
+
+  const [quotations, invoices, receipts] = await Promise.all([
+     Quotation.aggregate([
+         matchStage,
+         { $group: { _id: null, total: { $sum: '$finalAmount' }, count: { $sum: 1 } } }
+     ]),
+     Invoice.aggregate([
+         matchStage,
+         { $group: { _id: null, total: { $sum: '$finalAmount' }, count: { $sum: 1 } } }
+     ]),
+     Receipt.aggregate([
+         matchStage,
+         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+     ])
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+        quotations: {
+            total: quotations[0]?.total || 0,
+            count: quotations[0]?.count || 0
+        },
+        invoices: {
+            total: invoices[0]?.total || 0,
+            count: invoices[0]?.count || 0
+        },
+        receipts: {
+            total: receipts[0]?.total || 0,
+            count: receipts[0]?.count || 0
+        }
+    }
+  });
+});
 
 // ========== INVOICE MANAGEMENT ==========
 

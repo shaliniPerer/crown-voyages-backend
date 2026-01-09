@@ -1,7 +1,11 @@
 import mongoose from 'mongoose';
 
 const leadSchema = new mongoose.Schema({
- guestName: {
+  leadNumber: {
+    type: String,
+    unique: true
+  },
+  guestName: {
     type: String,
     required: [true, 'Guest name is required'],
     trim: true
@@ -78,6 +82,10 @@ const leadSchema = new mongoose.Schema({
     type: String,
     enum: ['New', 'Pending', 'Quotation', 'Invoice', 'Receipt', 'Confirmed', 'Cancelled', 'Converted'],
     default: 'New'
+  },
+  booking: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Booking'
   },
   // Room configurations per room
   roomConfigs: [{

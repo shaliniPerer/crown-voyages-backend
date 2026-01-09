@@ -4,6 +4,7 @@ import Invoice from '../models/Invoice.js';
 import Payment from '../models/Payment.js';
 import Lead from '../models/Lead.js';
 import Quotation from '../models/Quotation.js';
+import Receipt from '../models/Receipt.js';
 import User from '../models/User.js';
 
 // @desc    Get dashboard metrics
@@ -12,17 +13,37 @@ import User from '../models/User.js';
 export const getMetrics = asyncHandler(async (req, res) => {
   const today = new Date();
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const startOfYear = new Date(today.getFullYear(), 0, 1);
 
   // Total bookings
   const totalBookings = await Booking.countDocuments({ status: { $ne: 'Cancelled' } });
 
-  // Total revenue (paid invoices)
-  const revenueResult = await Invoice.aggregate([
-    { $match: { status: 'Paid' } },
-    { $group: { _id: null, total: { $sum: '$finalAmount' } } }
+  // Total Guests (sum of adults + children from Confirmed bookings)
+  const guestsResult = await Booking.aggregate([
+    { $match: { status: { $ne: 'Cancelled' } } },
+    { $group: { _id: null, total: { $sum: { $add: ["$adults", "$children"] } } } }
   ]);
-  const totalRevenue = revenueResult[0]?.total || 0;
+  const totalGuests = guestsResult[0]?.total || 0;
+
+  // Total Quotation Value
+  const quoteResult = await Quotation.aggregate([
+    { $group: { _id: null, total: { $sum: '$finalAmount' }, count: { $sum: 1 } } }
+  ]);
+  const totalQuotationValue = quoteResult[0]?.total || 0;
+  const totalQuotationCount = quoteResult[0]?.count || 0;
+
+  // Total Invoice Value
+  const invoiceResult = await Invoice.aggregate([
+    { $group: { _id: null, total: { $sum: '$finalAmount' }, count: { $sum: 1 } } }
+  ]);
+  const totalInvoiceValue = invoiceResult[0]?.total || 0;
+  const totalInvoiceCount = invoiceResult[0]?.count || 0;
+
+  // Total Receipt Value (Real Revenue)
+  const receiptResult = await Receipt.aggregate([
+    { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+  ]);
+  const totalReceiptValue = receiptResult[0]?.total || 0;
+  const totalReceiptCount = receiptResult[0]?.count || 0;
 
   // Outstanding payments
   const outstandingResult = await Invoice.aggregate([
@@ -40,9 +61,9 @@ export const getMetrics = asyncHandler(async (req, res) => {
     status: { $ne: 'Cancelled' }
   });
 
-  const monthlyRevenueResult = await Invoice.aggregate([
-    { $match: { createdAt: { $gte: startOfMonth }, status: 'Paid' } },
-    { $group: { _id: null, total: { $sum: '$finalAmount' } } }
+  const monthlyRevenueResult = await Receipt.aggregate([
+    { $match: { createdAt: { $gte: startOfMonth } } },
+    { $group: { _id: null, total: { $sum: '$amount' } } }
   ]);
   const monthlyRevenue = monthlyRevenueResult[0]?.total || 0;
 
@@ -50,7 +71,14 @@ export const getMetrics = asyncHandler(async (req, res) => {
     success: true,
     data: {
       totalBookings,
-      totalRevenue,
+      totalGuests,
+      totalRevenue: totalReceiptValue, // Revenue is cash in hand (receipts)
+      totalQuotationValue,
+      totalQuotationCount,
+      totalInvoiceValue,
+      totalInvoiceCount,
+      totalReceiptValue,
+      totalReceiptCount,
       outstandingPayments,
       activeGuests,
       monthly: {
@@ -108,47 +136,98 @@ export const getOutstandingPayments = asyncHandler(async (req, res) => {
 // @access  Private
 export const getRevenueChart = asyncHandler(async (req, res) => {
   const { period = 'monthly' } = req.query;
-  let groupBy, dateFormat, limit;
+  let groupBy, limit, startDate;
 
+  // Set time range based on period
+  const now = new Date();
+  
   switch (period) {
-    case 'daily':
+    case 'daily': // Last 30 days
       groupBy = { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } };
       limit = 30;
+      startDate = new Date(now.setDate(now.getDate() - 30));
       break;
-    case 'weekly':
-      groupBy = { $week: '$createdAt' };
+    case 'weekly': // Last 12 weeks
+      groupBy = { 
+        year: { $year: "$createdAt" }, 
+        week: { $week: "$createdAt" } 
+      };
+      // Format later as "Week X, YYYY"
       limit = 12;
+      startDate = new Date(now.setDate(now.getDate() - (12 * 7)));
       break;
-    case 'monthly':
+    case 'monthly': // Last 12 months
       groupBy = { $dateToString: { format: '%Y-%m', date: '$createdAt' } };
       limit = 12;
+      startDate = new Date(now.setMonth(now.getMonth() - 12));
+      break;
+    case 'annually': // Last 5 years
+      groupBy = { $dateToString: { format: '%Y', date: '$createdAt' } };
+      limit = 5;
+      startDate = new Date(now.setFullYear(now.getFullYear() - 5));
       break;
     default:
       groupBy = { $dateToString: { format: '%Y-%m', date: '$createdAt' } };
       limit = 12;
+      startDate = new Date(now.setMonth(now.getMonth() - 12));
   }
 
-  const revenueData = await Payment.aggregate([
-    {
-      $match: {
-        status: 'Completed',
-        createdAt: { $gte: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) }
-      }
-    },
-    {
-      $group: {
-        _id: groupBy,
-        revenue: { $sum: '$amount' }
-      }
-    },
-    { $sort: { _id: 1 } },
-    { $limit: limit }
+  const matchStage = {
+    $match: {
+      createdAt: { $gte: startDate }
+    }
+  };
+
+  const groupStage = (amountField) => ({
+    $group: {
+      _id: groupBy,
+      total: { $sum: `$${amountField}` },
+      count: { $sum: 1 }
+    }
+  });
+
+  const [receipts, quotations, invoices, bookings] = await Promise.all([
+    Receipt.aggregate([matchStage, groupStage('amount'), { $sort: { _id: 1 } }]),
+    Quotation.aggregate([matchStage, groupStage('finalAmount'), { $sort: { _id: 1 } }]),
+    Invoice.aggregate([matchStage, groupStage('finalAmount'), { $sort: { _id: 1 } }]),
+    Booking.aggregate([matchStage, groupStage('totalAmount'), { $sort: { _id: 1 } }])
   ]);
 
-  const formattedData = revenueData.map(item => ({
-    name: item._id,
-    revenue: item.revenue
-  }));
+  // Merge data
+  const dataMap = new Map();
+  const formatKey = (key) => {
+    if (typeof key === 'object' && key.week) return `W${key.week}-${key.year}`;
+    return key; 
+  };
+
+  const processData = (dataset, type) => {
+    dataset.forEach(item => {
+      const key = formatKey(item._id);
+      if (!dataMap.has(key)) {
+        dataMap.set(key, { name: key, revenue: 0, quotation: 0, invoice: 0, booking: 0, bookingCount: 0 });
+      }
+      dataMap.get(key)[type] = item.total;
+      if (type === 'booking') {
+          dataMap.get(key)['bookingCount'] = item.count;
+      }
+    });
+  };
+
+  processData(receipts, 'revenue');
+  processData(quotations, 'quotation');
+  processData(invoices, 'invoice');
+  processData(bookings, 'booking');
+
+  // Convert map to array and sort
+  let formattedData = Array.from(dataMap.values());
+  
+  // Sort based on period logic (simple string sort works for ISO dates, special handling for weeks)
+  formattedData.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Limit results
+  if (formattedData.length > limit) {
+      formattedData = formattedData.slice(formattedData.length - limit);
+  }
 
   res.json({
     success: true,

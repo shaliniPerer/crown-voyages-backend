@@ -7,7 +7,7 @@ import Lead from '../models/Lead.js';
 import ActivityLog from '../models/ActivityLog.js';
 import { sendEmail } from '../config/email.js';
 import { quotationEmailTemplate, bookingConfirmationTemplate } from '../utils/emailTemplates.js';
-import { generateQuotationPDF, generateInvoicePDF, generateReceiptPDF } from '../utils/pdfGenerator.js';
+import { generateQuotationPDF, generateInvoicePDF, generateReceiptPDF, generateReportPDF } from '../utils/pdfGenerator.js';
 
 // ========== LEAD MANAGEMENT ==========
 
@@ -22,6 +22,7 @@ export const getLeads = asyncHandler(async (req, res) => {
     const leads = await Lead.find(query)
       .populate('resort', 'name location starRating description amenities mealPlan images')
       .populate('room', 'roomType roomName price description size bedType maxAdults maxChildren amenities images')
+      .populate('booking', 'bookingNumber')
       .sort({ createdAt: -1 });
 
     res.json({
@@ -43,8 +44,17 @@ export const getLeads = asyncHandler(async (req, res) => {
 // @route   POST /api/bookings/lead
 // @access  Private
 export const createLead = asyncHandler(async (req, res) => {
+  // Generate Lead ID (LD-XXXX)
+  const lastLead = await Lead.findOne().sort({ createdAt: -1 });
+  let lastNumber = 0;
+  if (lastLead && lastLead.leadNumber) {
+    lastNumber = parseInt(lastLead.leadNumber.replace('LD-', ''));
+  }
+  const leadNumber = `LD-${String(lastNumber + 1).padStart(4, '0')}`;
+
   const lead = await Lead.create({
     ...req.body,
+    leadNumber,
     createdBy: req.user._id
   });
 
@@ -179,15 +189,20 @@ export const deleteLead = asyncHandler(async (req, res) => {
 // @route   GET /api/bookings/quotations
 // @access  Private
 export const getQuotations = asyncHandler(async (req, res) => {
-  const { status } = req.query;
+  const { status, lead } = req.query;
   
   let query = {};
   if (status) query.status = status;
+  if (lead) query.lead = lead;
 
   const quotations = await Quotation.find(query)
     .populate('resort', 'name location starRating')
     .populate('room', 'roomType price')
-    .populate('lead', 'customerName')
+    .populate({
+      path: 'lead',
+      select: 'customerName booking leadNumber', 
+      populate: { path: 'booking', select: 'bookingNumber' }
+    })
     .populate('createdBy', 'name')
     .sort({ createdAt: -1 });
 
@@ -476,7 +491,11 @@ export const sendQuotationEmail = asyncHandler(async (req, res) => {
 export const exportQuotationPDF = asyncHandler(async (req, res) => {
   const quotation = await Quotation.findById(req.params.id)
     .populate('resort', 'name location')
-    .populate('room', 'roomType price');
+    .populate('room', 'roomType price')
+    .populate({
+      path: 'lead',
+      populate: { path: 'booking', select: 'bookingNumber' }
+    });
 
   if (!quotation) {
     res.status(404);
@@ -527,6 +546,11 @@ export const convertToBooking = asyncHandler(async (req, res) => {
   quotation.convertedToBooking = true;
   quotation.booking = booking._id;
   await quotation.save();
+
+  // Update Lead with Booking reference
+  if (quotation.lead) {
+    await Lead.findByIdAndUpdate(quotation.lead, { booking: booking._id, status: 'Converted' });
+  }
 
   await ActivityLog.create({
     user: req.user._id,
@@ -688,6 +712,27 @@ export const deleteBooking = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get all invoices
+// @route   GET /api/bookings/invoices
+// @access  Private
+export const getInvoices = asyncHandler(async (req, res) => {
+  const { lead } = req.query;
+  const query = {};
+  if (lead) query.lead = lead;
+
+  const invoices = await Invoice.find(query)
+    .populate({
+      path: 'lead',
+      populate: { path: 'booking', select: 'bookingNumber' }
+    })
+    .sort({ createdAt: -1 });
+
+  res.json({
+    success: true,
+    data: invoices
+  });
+});
+
 // @desc    Create invoice
 // @route   POST /api/bookings/invoice
 // @access  Private
@@ -757,12 +802,79 @@ export const createInvoice = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get reports (invoice, receipt, quotation)
+// @route   GET /api/bookings/reports
+// @access  Private
+export const getReports = asyncHandler(async (req, res) => {
+  const { type, period } = req.query;
+
+  // Calculate date range based on period
+  const now = new Date();
+  let startDate = new Date();
+  const endDate = now;
+
+  if (period === 'daily') {
+    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  } else if (period === 'weekly') {
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    startDate = new Date(now.setDate(diff));
+    startDate.setHours(0, 0, 0, 0);
+  } else if (period === 'monthly') {
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (period === 'annually') {
+    startDate = new Date(now.getFullYear(), 0, 1);
+  } else {
+    // Default to monthly
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  let data = [];
+  let model;
+
+  if (type === 'invoice') {
+    model = Invoice;
+  } else if (type === 'receipt') {
+    model = Receipt;
+  } else if (type === 'quotation') {
+    model = Quotation;
+  } else {
+    res.status(400);
+    throw new Error('Invalid report type');
+  }
+
+  // Find documents within range
+  const documents = await model.find({
+    createdAt: { $gte: startDate, $lte: endDate }
+  })
+    .sort({ createdAt: -1 });
+
+  const reportTitle = `${type.charAt(0).toUpperCase() + type.slice(1)} Report`;
+
+  const pdfBuffer = await generateReportPDF(reportTitle, documents, { period, type });
+
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${type}-report-${period}.pdf"`,
+    'Content-Length': pdfBuffer.length
+  });
+
+  res.send(pdfBuffer);
+});
+
 // @desc    Get receipts
 // @route   GET /api/bookings/receipts
 // @access  Private
 export const getReceipts = asyncHandler(async (req, res) => {
-  const receipts = await Receipt.find()
-    .populate('lead')
+  const { lead } = req.query;
+  const query = {};
+  if (lead) query.lead = lead;
+
+  const receipts = await Receipt.find(query)
+    .populate({
+      path: 'lead',
+      populate: { path: 'booking', select: 'bookingNumber' }
+    })
     .sort({ createdAt: -1 });
 
   res.json({
@@ -790,32 +902,58 @@ export const createReceipt = asyncHandler(async (req, res) => {
   } = req.body;
 
   // Validate required fields
-  if (!customerName || !email || !amount || !finalAmount) {
+  const missingFields = [];
+  if (!customerName) missingFields.push('customerName');
+  if (!email) missingFields.push('email');
+  if (amount === undefined || amount === null) missingFields.push('amount');
+  if (finalAmount === undefined || finalAmount === null) missingFields.push('finalAmount');
+
+  if (missingFields.length > 0) {
     res.status(400);
-    throw new Error('Missing required fields: customerName, email, amount, finalAmount');
+    throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
   }
 
-  // Generate receipt number
+  // Generate receipt number safely
   const lastReceipt = await Receipt.findOne().sort({ createdAt: -1 });
-  const lastNumber = lastReceipt?.receiptNumber 
-    ? parseInt(lastReceipt.receiptNumber.replace('REC-', '')) 
-    : 0;
+  let lastNumber = 0;
+  if (lastReceipt && lastReceipt.receiptNumber) {
+    const parsed = parseInt(lastReceipt.receiptNumber.replace('REC-', ''));
+    if (!isNaN(parsed)) {
+      lastNumber = parsed;
+    }
+  }
   const receiptNumber = `REC-${String(lastNumber + 1).padStart(6, '0')}`;
+  console.log('📝 Generated Receipt Number:', receiptNumber);
 
-  const receipt = await Receipt.create({
-    receiptNumber,
-    customerName,
-    email,
-    phone,
-    amount,
-    discountValue,
-    finalAmount,
-    paymentMethod,
-    notes,
-    lead,
-    status: 'Received',
-    createdBy: req.user._id
-  });
+  let receipt;
+  try {
+    receipt = await Receipt.create({
+      receiptNumber,
+      customerName,
+      email,
+      phone,
+      amount,
+      discountValue,
+      finalAmount,
+      paymentMethod,
+      notes,
+      lead,
+      status: 'Received',
+      createdBy: req.user._id
+    });
+  } catch (error) {
+    console.error('❌ Error creating receipt document:', error);
+    // Format mongoose validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(val => val.message);
+      res.status(400);
+      throw new Error(`Receipt Validation Failed: ${messages.join(', ')}`);
+    } else if (error.code === 11000) {
+      res.status(400); 
+      throw new Error(`Duplicate receipt number: ${receiptNumber}`);
+    }
+    throw error;
+  }
 
   console.log('✅ Receipt created:', receipt._id);
 
@@ -1032,7 +1170,12 @@ export const sendReceiptEmail = asyncHandler(async (req, res) => {
 // @route   GET /api/bookings/invoice/:id/pdf
 // @access  Private
 export const exportInvoicePDF = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findById(req.params.id).populate('lead');
+  const invoice = await Invoice.findById(req.params.id)
+    .populate({
+      path: 'lead',
+      populate: { path: 'booking', select: 'bookingNumber' }
+    })
+    .populate('booking');
 
   if (!invoice) {
     res.status(404);
@@ -1050,7 +1193,12 @@ export const exportInvoicePDF = asyncHandler(async (req, res) => {
 // @route   GET /api/bookings/receipt/:id/pdf
 // @access  Private
 export const exportReceiptPDF = asyncHandler(async (req, res) => {
-  const receipt = await Receipt.findById(req.params.id).populate('lead');
+  const receipt = await Receipt.findById(req.params.id)
+    .populate({
+      path: 'lead',
+      populate: { path: 'booking', select: 'bookingNumber' }
+    })
+    .populate('invoice');
 
   if (!receipt) {
     res.status(404);
@@ -1062,4 +1210,85 @@ export const exportReceiptPDF = asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=receipt-${receipt.receiptNumber}.pdf`);
   res.send(pdfBuffer);
+});
+
+// @desc    Delete quotation
+// @route   DELETE /api/bookings/quotation/:id
+// @access  Private
+export const deleteQuotation = asyncHandler(async (req, res) => {
+  const quotation = await Quotation.findById(req.params.id);
+
+  if (!quotation) {
+    res.status(404);
+    throw new Error('Quotation not found');
+  }
+
+  await quotation.deleteOne();
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'delete',
+    resource: 'quotation',
+    resourceId: quotation._id,
+    description: `Deleted quotation: ${quotation.quotationNumber}`
+  });
+
+  res.json({
+    success: true,
+    message: 'Quotation deleted successfully'
+  });
+});
+
+// @desc    Delete invoice
+// @route   DELETE /api/bookings/invoice/:id
+// @access  Private
+export const deleteInvoice = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.id);
+
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+
+  await invoice.deleteOne();
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'delete',
+    resource: 'invoice',
+    resourceId: invoice._id,
+    description: `Deleted invoice: ${invoice.invoiceNumber}`
+  });
+
+  res.json({
+    success: true,
+    message: 'Invoice deleted successfully'
+  });
+});
+
+// @desc    Delete receipt
+// @route   DELETE /api/bookings/receipt/:id
+// @access  Private
+export const deleteReceipt = asyncHandler(async (req, res) => {
+  const receipt = await Receipt.findById(req.params.id);
+
+  if (!receipt) {
+    res.status(404);
+    throw new Error('Receipt not found');
+  }
+
+  await receipt.deleteOne();
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'delete',
+    resource: 'receipt',
+    resourceId: receipt._id,
+    description: `Deleted receipt: ${receipt.receiptNumber}`
+  });
+
+  res.json({
+    success: true,
+    message: 'Receipt deleted successfully'
+  });
 });
