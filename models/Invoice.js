@@ -44,6 +44,16 @@ const invoiceSchema = new mongoose.Schema({
     required: true,
     min: [0, 'Final amount cannot be negative']
   },
+  paidAmount: {
+    type: Number,
+    default: 0,
+    min: [0, 'Paid amount cannot be negative']
+  },
+  balance: {
+    type: Number,
+    required: true,
+    min: [0, 'Balance cannot be negative']
+  },
   dueDate: {
     type: Date,
     required: false
@@ -71,6 +81,9 @@ const invoiceSchema = new mongoose.Schema({
 
 // Generate invoice number before saving
 invoiceSchema.pre('save', async function(next) {
+  // Calculate balance
+  this.balance = this.finalAmount - this.paidAmount;
+
   if (this.isNew) {
     const date = new Date();
     const year = date.getFullYear();

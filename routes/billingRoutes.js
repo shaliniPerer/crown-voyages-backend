@@ -6,6 +6,7 @@ import {
   createInvoice,
   updateInvoice,
   sendInvoiceEmail,
+  sendManualReminder,
   exportInvoicePDF,
   getPayments,
   getPaymentsByInvoice,
@@ -14,7 +15,8 @@ import {
   getReminders,
   createReminder,
   updateReminder,
-  deleteReminder
+  deleteReminder,
+  getBillingHistory
 } from '../controllers/billingController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { isFinanceOrAdmin } from '../middleware/roleMiddleware.js';
@@ -33,6 +35,7 @@ router.get('/invoices/:id', getInvoiceById);
 router.post('/invoices', isFinanceOrAdmin, createInvoice);
 router.patch('/invoices/:id', isFinanceOrAdmin, updateInvoice);
 router.post('/invoices/:id/send-email', sendInvoiceEmail);
+router.post('/invoices/:id/remind', sendManualReminder);
 router.get('/invoices/:id/pdf', exportInvoicePDF);
 
 // Payment routes

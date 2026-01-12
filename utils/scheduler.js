@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import Invoice from '../models/Invoice.js';
 import Reminder from '../models/Reminder.js';
 import Quotation from '../models/Quotation.js';
-import { sendPaymentReminderEmail } from './emailService.js';
+import { sendPaymentReminderEmail } from './emailServer.js';
 
 // Check for overdue invoices and send reminders
 const checkOverdueInvoices = async () => {
@@ -15,7 +15,7 @@ const checkOverdueInvoices = async () => {
     // Find invoices that are overdue
     const overdueInvoices = await Invoice.find({
       dueDate: { $lt: today },
-      status: { $in: ['Pending', 'Partial'] },
+      status: { $in: ['Pending', 'Partial', 'Sent'] },
       balance: { $gt: 0 }
     });
 
@@ -28,9 +28,15 @@ const checkOverdueInvoices = async () => {
         await invoice.save();
       }
 
-      // Send reminder email
+      // Send reminder email - find if there is an 'after' reminder configured
+      const afterReminder = await Reminder.findOne({ reminderType: 'after', enabled: true });
+      
       try {
-        await sendPaymentReminderEmail(invoice, 'after');
+        if (afterReminder) {
+            await sendPaymentReminderEmail(invoice, 'after', afterReminder.template, afterReminder.subject);
+        } else {
+            await sendPaymentReminderEmail(invoice, 'after');
+        }
         console.log(`✉️  Sent overdue reminder for invoice ${invoice.invoiceNumber}`);
       } catch (error) {
         console.error(`Failed to send reminder for ${invoice.invoiceNumber}:`, error.message);
@@ -69,7 +75,7 @@ const checkUpcomingDueDates = async () => {
           $gte: targetDate,
           $lt: new Date(targetDate.getTime() + 24 * 60 * 60 * 1000)
         },
-        status: { $in: ['Pending', 'Partial'] },
+        status: { $in: ['Pending', 'Partial', 'Sent', 'Overdue'] },
         balance: { $gt: 0 }
       });
 
@@ -77,7 +83,7 @@ const checkUpcomingDueDates = async () => {
 
       for (const invoice of invoices) {
         try {
-          await sendPaymentReminderEmail(invoice, reminder.reminderType);
+          await sendPaymentReminderEmail(invoice, reminder.reminderType, reminder.template, reminder.subject);
           console.log(`✉️  Sent ${reminder.reminderType} reminder for invoice ${invoice.invoiceNumber}`);
         } catch (error) {
           console.error(`Failed to send reminder for ${invoice.invoiceNumber}:`, error.message);

@@ -40,22 +40,52 @@ export const sendPaymentReceiptEmail = async (payment, invoice) => {
 };
 
 // Send payment reminder email
-export const sendPaymentReminderEmail = async (invoice, reminderType) => {
-  const html = paymentReminderTemplate(invoice, reminderType);
+export const sendPaymentReminderEmail = async (invoice, reminderType, customTemplate, customSubject) => {
+  let html;
+  let subject = customSubject;
+
+  if (customTemplate) {
+    // Replace placeholders in custom template
+    html = customTemplate
+      .replace(/{customer_name}/g, invoice.customerName || 'Valued Client')
+      .replace(/{invoice_number}/g, invoice.invoiceNumber || 'N/A')
+      .replace(/{amount}/g, (invoice.balance || invoice.finalAmount || 0).toFixed(2))
+      .replace(/{due_date}/g, invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A');
+    
+    // Wrap in standard layout if it doesn't look like HTML
+    if (!html.includes('<html')) {
+        html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <div style="background: #D4AF37; color: #000; padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+                <h2 style="margin:0;">Payment Reminder</h2>
+            </div>
+            <div style="padding: 20px; line-height: 1.6;">
+                ${html.replace(/\n/g, '<br>')}
+            </div>
+            <div style="text-align: center; color: #777; font-size: 12px; margin-top: 20px;">
+                © ${new Date().getFullYear()} Crown Voyages
+            </div>
+        </div>
+        `;
+    }
+  } else {
+    html = paymentReminderTemplate(invoice, reminderType);
+  }
   
-  let subject;
-  switch (reminderType) {
-    case 'before':
-      subject = `Payment Reminder - Invoice ${invoice.invoiceNumber} Due Soon`;
-      break;
-    case 'on':
-      subject = `Payment Due Today - Invoice ${invoice.invoiceNumber}`;
-      break;
-    case 'after':
-      subject = `Overdue Payment Notice - Invoice ${invoice.invoiceNumber}`;
-      break;
-    default:
-      subject = `Payment Reminder - Invoice ${invoice.invoiceNumber}`;
+  if (!subject) {
+    switch (reminderType) {
+      case 'before':
+        subject = `Payment Reminder - Invoice ${invoice.invoiceNumber} Due Soon`;
+        break;
+      case 'on':
+        subject = `Payment Due Today - Invoice ${invoice.invoiceNumber}`;
+        break;
+      case 'after':
+        subject = `Overdue Payment Notice - Invoice ${invoice.invoiceNumber}`;
+        break;
+      default:
+        subject = `Payment Reminder - Invoice ${invoice.invoiceNumber}`;
+    }
   }
   
   return await sendEmail({

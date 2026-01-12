@@ -10,6 +10,7 @@ import Receipt from '../models/Receipt.js';
 import { sendEmail } from '../config/email.js';
 import { invoiceEmailTemplate, paymentReceiptTemplate } from '../utils/emailTemplates.js';
 import { generateInvoicePDF, generateReceiptPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator.js';
+import { sendPaymentReminderEmail } from '../utils/emailServer.js';
 
 // ========== STATS MANAGEMENT ==========
 
@@ -160,6 +161,9 @@ export const createInvoice = asyncHandler(async (req, res) => {
     booking: bookingId,
     lead: leadId,
     finalAmount,
+    paidAmount: 0,
+    balance: finalAmount,
+    status: 'Pending',
     createdBy: req.user._id
   });
 
@@ -309,6 +313,53 @@ export const sendInvoiceEmail = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Send manual payment reminder
+// @route   POST /api/billing/invoices/:id/remind
+// @access  Private
+export const sendManualReminder = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.id);
+
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+
+  const { type = 'before', template, subject } = req.body;
+
+  await sendPaymentReminderEmail(invoice, type, template, subject);
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'send_email',
+    resource: 'invoice',
+    resourceId: invoice._id,
+    description: `Sent manual ${type} reminder for invoice ${invoice.invoiceNumber}`
+  });
+
+  res.json({
+    success: true,
+    message: 'Reminder sent successfully'
+  });
+});
+
+// ========== HISTORY MANAGEMENT ==========
+
+// @desc    Get billing history logs
+// @route   GET /api/billing/history
+// @access  Private
+export const getBillingHistory = asyncHandler(async (req, res) => {
+  const logs = await ActivityLog.find({
+    resource: { $in: ['invoice', 'payment', 'quotation', 'receipt'] } 
+  })
+    .populate('user', 'name')
+    .sort({ createdAt: -1 })
+    .limit(100);
+
+  res.json({
+    success: true,
+    data: logs
+  });
+});
 // @desc    Send payment receipt via email
 // @route   POST /api/billing/payments/:id/send-receipt
 // @access  Private

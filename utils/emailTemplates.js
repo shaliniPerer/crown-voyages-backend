@@ -279,16 +279,16 @@ export const paymentReminderTemplate = (invoice, reminderType) => {
           <div class="invoice-box">
             <h3>Invoice Details</h3>
             <p><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</p>
-            <p><strong>Invoice Date:</strong> ${new Date(invoice.createdAt).toLocaleDateString()}</p>
-            <p><strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString()}</p>
+            <p><strong>Invoice Date:</strong> ${invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString() : 'N/A'}</p>
+            <p><strong>Due Date:</strong> ${invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}</p>
             
-            <div class="amount">$${invoice.balance.toFixed(2)}</div>
+            <div class="amount">$${(invoice.balance || 0).toFixed(2)}</div>
             <p style="text-align: center; color: #666;">Amount Due</p>
             
             <div style="margin-top: 20px;">
-              <p><strong>Original Amount:</strong> $${invoice.finalAmount.toFixed(2)}</p>
-              <p><strong>Amount Paid:</strong> $${invoice.paidAmount.toFixed(2)}</p>
-              <p><strong>Balance Due:</strong> $${invoice.balance.toFixed(2)}</p>
+              <p><strong>Original Amount:</strong> $${(invoice.finalAmount || 0).toFixed(2)}</p>
+              <p><strong>Amount Paid:</strong> $${(invoice.paidAmount || 0).toFixed(2)}</p>
+              <p><strong>Balance Due:</strong> $${(invoice.balance || 0).toFixed(2)}</p>
             </div>
           </div>
           
