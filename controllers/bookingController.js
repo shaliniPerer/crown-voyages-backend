@@ -4,10 +4,46 @@ import Quotation from '../models/Quotation.js';
 import Invoice from '../models/Invoice.js';
 import Receipt from '../models/Receipt.js';
 import Lead from '../models/Lead.js';
+import Room from '../models/Room.js';
 import ActivityLog from '../models/ActivityLog.js';
 import { sendEmail } from '../config/email.js';
 import { quotationEmailTemplate, bookingConfirmationTemplate } from '../utils/emailTemplates.js';
 import { generateQuotationPDF, generateInvoicePDF, generateReceiptPDF, generateReportPDF } from '../utils/pdfGenerator.js';
+
+const checkRoomAvailability = async (roomId, checkIn, checkOut, excludeBookingId = null) => {
+  const room = await Room.findById(roomId);
+  if (!room) return { available: false, message: 'Room not found' };
+
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+
+  // 1. Check availabilityCalendar (room must be open during this period)
+  const isWithinCalendar = room.availabilityCalendar.some(range => {
+    return start >= new Date(range.startDate) && end <= new Date(range.endDate);
+  });
+
+  if (!isWithinCalendar) {
+    return { available: false, message: 'Room is not available for the selected dates based on its availability calendar' };
+  }
+
+  // 2. Check existing bookings (room must not be locked by another booking)
+  // We check both Booking and Lead (if Lead has dates and is not yet a booking?) 
+  // Actually, usually only Confirmed/Pending bookings lock dates.
+  const overlappingBooking = await Booking.findOne({
+    room: roomId,
+    _id: { $ne: excludeBookingId },
+    status: { $nin: ['Cancelled', 'No-show'] },
+    $or: [
+      { checkIn: { $lt: end }, checkOut: { $gt: start } }
+    ]
+  });
+
+  if (overlappingBooking) {
+    return { available: false, message: 'Room is already booked for these dates' };
+  }
+
+  return { available: true };
+};
 
 // ========== LEAD MANAGEMENT ==========
 
@@ -57,6 +93,15 @@ export const createLead = asyncHandler(async (req, res) => {
     lastNumber = parseInt(lastLead.leadNumber.replace('LD-', ''));
   }
   const leadNumber = `LD-${String(lastNumber + 1).padStart(4, '0')}`;
+
+  // Check room availability
+  if (req.body.room && req.body.checkIn && req.body.checkOut) {
+    const availability = await checkRoomAvailability(req.body.room, req.body.checkIn, req.body.checkOut);
+    if (!availability.available) {
+      res.status(400);
+      throw new Error(availability.message);
+    }
+  }
 
   const lead = await Lead.create({
     ...req.body,
@@ -115,6 +160,20 @@ export const updateLead = asyncHandler(async (req, res) => {
 
   // Prepare update data - remove empty strings for ObjectId fields
   const updateData = { ...req.body };
+
+  // Check room availability if room/dates are changed
+  const roomId = updateData.room || lead.room;
+  const checkIn = updateData.checkIn || lead.checkIn;
+  const checkOut = updateData.checkOut || lead.checkOut;
+
+  if (roomId && checkIn && checkOut) {
+    // Check overlapping bookings excluding this lead's own potential booking
+    const availability = await checkRoomAvailability(roomId, checkIn, checkOut, lead.booking);
+    if (!availability.available) {
+      res.status(400);
+      throw new Error(availability.message);
+    }
+  }
   
   // Convert empty strings to null or undefined for ObjectId fields
   if (updateData.resort === '' || updateData.resort === null) {
@@ -242,13 +301,20 @@ export const createQuotation = asyncHandler(async (req, res) => {
     notes,
     terms,
     lead: leadId,
+    booking: bookingId,
     sendEmail: shouldSendEmail
   } = req.body;
 
   // Validate required fields
-  if (!customerName || !email || !amount || !finalAmount) {
+  const missingFields = [];
+  if (!customerName) missingFields.push('customerName');
+  if (!email) missingFields.push('email');
+  if (amount === undefined || amount === null) missingFields.push('amount');
+  if (finalAmount === undefined || finalAmount === null) missingFields.push('finalAmount');
+
+  if (missingFields.length > 0) {
     res.status(400);
-    throw new Error('Missing required fields: customerName, email, amount, finalAmount');
+    throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
   }
 
   // Generate quotation number
@@ -270,6 +336,7 @@ export const createQuotation = asyncHandler(async (req, res) => {
     notes,
     terms,
     lead: leadId,
+    booking: bookingId,
     status: 'Draft',
     createdBy: req.user._id,
     versions: [{
@@ -539,6 +606,15 @@ export const convertToBooking = asyncHandler(async (req, res) => {
     throw new Error('Only accepted quotations can be converted to bookings');
   }
 
+  // Check room availability
+  if (quotation.room && quotation.checkIn && quotation.checkOut) {
+    const availability = await checkRoomAvailability(quotation.room._id, quotation.checkIn, quotation.checkOut);
+    if (!availability.available) {
+      res.status(400);
+      throw new Error(availability.message);
+    }
+  }
+
   const booking = await Booking.create({
     guestName: quotation.customerName,
     email: quotation.email,
@@ -645,6 +721,15 @@ export const getBookingById = asyncHandler(async (req, res) => {
 // @route   POST /api/bookings
 // @access  Private
 export const createBooking = asyncHandler(async (req, res) => {
+  // Check room availability
+  if (req.body.room && req.body.checkIn && req.body.checkOut) {
+    const availability = await checkRoomAvailability(req.body.room, req.body.checkIn, req.body.checkOut);
+    if (!availability.available) {
+      res.status(400);
+      throw new Error(availability.message);
+    }
+  }
+
   const booking = await Booking.create({
     ...req.body,
     createdBy: req.user._id
@@ -681,6 +766,19 @@ export const updateBooking = asyncHandler(async (req, res) => {
 
   // Prepare update data
   const updateData = { ...req.body };
+
+  // Check room availability if room/dates are changed
+  const roomId = updateData.room || booking.room;
+  const checkIn = updateData.checkIn || booking.checkIn;
+  const checkOut = updateData.checkOut || booking.checkOut;
+
+  if (roomId && checkIn && checkOut) {
+    const availability = await checkRoomAvailability(roomId, checkIn, checkOut, booking._id);
+    if (!availability.available) {
+      res.status(400);
+      throw new Error(availability.message);
+    }
+  }
   
   // Calculate balance if payment fields are being updated
   if (updateData.totalAmount !== undefined || updateData.paidAmount !== undefined) {
@@ -780,13 +878,20 @@ export const createInvoice = asyncHandler(async (req, res) => {
     finalAmount,
     dueDate,
     notes,
-    lead
+    lead,
+    booking
   } = req.body;
 
   // Validate required fields
-  if (!customerName || !email || !amount || !finalAmount) {
+  const missingFields = [];
+  if (!customerName) missingFields.push('customerName');
+  if (!email) missingFields.push('email');
+  if (amount === undefined || amount === null) missingFields.push('amount');
+  if (finalAmount === undefined || finalAmount === null) missingFields.push('finalAmount');
+
+  if (missingFields.length > 0) {
     res.status(400);
-    throw new Error('Missing required fields: customerName, email, amount, finalAmount');
+    throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
   }
 
   // Generate invoice number
@@ -807,6 +912,7 @@ export const createInvoice = asyncHandler(async (req, res) => {
     dueDate,
     notes,
     lead,
+    booking,
     status: 'Draft',
     createdBy: req.user._id
   });
@@ -934,9 +1040,13 @@ export const createReceipt = asyncHandler(async (req, res) => {
     amount,
     discountValue = 0,
     finalAmount,
+    bookingTotal,
+    remainingBalance,
     paymentMethod = 'Cash',
     notes,
-    lead
+    lead,
+    booking,
+    invoice
   } = req.body;
 
   // Validate required fields
@@ -973,9 +1083,13 @@ export const createReceipt = asyncHandler(async (req, res) => {
       amount,
       discountValue,
       finalAmount,
+      bookingTotal: bookingTotal || amount,
+      remainingBalance: remainingBalance || 0,
       paymentMethod,
       notes,
       lead,
+      booking,
+      invoice,
       status: 'Received',
       createdBy: req.user._id
     });
@@ -1003,9 +1117,45 @@ export const createReceipt = asyncHandler(async (req, res) => {
     description: `Created receipt ${receiptNumber} for ${customerName}`
   });
 
-  // Update lead status to 'Receipt'
+  // Update lead status and balance
   if (lead) {
-    await Lead.findByIdAndUpdate(lead, { status: 'Receipt' });
+    const leadDoc = await Lead.findById(lead);
+    if (leadDoc) {
+      // Update total amount if changed in specific receipt
+      if (bookingTotal !== undefined && bookingTotal !== null) {
+        leadDoc.totalAmount = bookingTotal;
+      }
+
+      // Update paid amount and balance
+      leadDoc.paidAmount = (leadDoc.paidAmount || 0) + finalAmount;
+      leadDoc.balance = Math.max(0, (leadDoc.totalAmount || 0) - leadDoc.paidAmount);
+      
+      // Update status
+      if (leadDoc.balance <= 0) {
+        leadDoc.status = 'Confirmed';
+      } else {
+        leadDoc.status = 'Receipt';
+      }
+      
+      await leadDoc.save();
+      console.log(`✅ Lead ${leadDoc.leadNumber} updated. Total: ${leadDoc.totalAmount}, Paid: ${leadDoc.paidAmount}, Balance: ${leadDoc.balance}`);
+    }
+  }
+
+  // Update invoice if linked
+  if (invoice) {
+    const linkedInvoice = await Invoice.findById(invoice);
+    if (linkedInvoice) {
+      linkedInvoice.paidAmount = (linkedInvoice.paidAmount || 0) + finalAmount;
+      // Balance is updated in pre-validate hook of Invoice model
+      if (linkedInvoice.paidAmount >= linkedInvoice.finalAmount) {
+        linkedInvoice.status = 'Paid';
+      } else if (linkedInvoice.paidAmount > 0) {
+        linkedInvoice.status = 'Partial';
+      }
+      await linkedInvoice.save();
+      console.log(`✅ Linked Invoice ${linkedInvoice.invoiceNumber} updated. New balance: ${linkedInvoice.balance}`);
+    }
   }
 
   const populatedReceipt = await Receipt.findById(receipt._id).populate('lead');

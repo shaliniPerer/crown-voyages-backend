@@ -1,5 +1,6 @@
 import asyncHandler from 'express-async-handler';
 import Room from '../models/Room.js';
+import Booking from '../models/Booking.js';
 import ActivityLog from '../models/ActivityLog.js';
 
 /* ================= GET ALL ROOMS ================= */
@@ -38,7 +39,23 @@ export const getRoomById = asyncHandler(async (req, res) => {
     throw new Error('Room not found');
   }
 
-  res.json({ success: true, data: room });
+  // Get existing bookings to show locked dates
+  const activeBookings = await Booking.find({
+    room: req.params.id,
+    status: { $nin: ['Cancelled', 'No-show'] },
+    checkOut: { $gte: new Date() } // Only future or current bookings
+  }).select('checkIn checkOut');
+
+  res.json({ 
+    success: true, 
+    data: {
+      ...room._doc,
+      bookedDates: activeBookings.map(b => ({
+        start: b.checkIn,
+        end: b.checkOut
+      }))
+    } 
+  });
 });
 
 /* ================= GET ROOMS BY RESORT ================= */

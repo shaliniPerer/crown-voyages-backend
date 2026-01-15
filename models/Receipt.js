@@ -44,6 +44,16 @@ const receiptSchema = new mongoose.Schema({
     required: true,
     min: [0, 'Final amount cannot be negative']
   },
+  bookingTotal: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  remainingBalance: {
+    type: Number,
+    required: true,
+    default: 0
+  },
   paymentMethod: {
     type: String,
     enum: ['Cash', 'Credit Card', 'Bank Transfer', 'Check', 'Online Payment'],

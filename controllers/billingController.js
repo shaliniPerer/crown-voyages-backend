@@ -102,6 +102,7 @@ export const getInvoices = asyncHandler(async (req, res) => {
 
   const invoices = await Invoice.find(query)
     .populate('booking', 'bookingNumber guestName')
+    .populate('lead')
     .populate('createdBy', 'name')
     .sort({ createdAt: -1 });
 
@@ -532,23 +533,32 @@ export const getPaymentsByInvoice = asyncHandler(async (req, res) => {
 export const recordPayment = asyncHandler(async (req, res) => {
   const { invoice: invoiceId, booking: bookingId, lead: leadId, amount, method, transactionId, date, notes } = req.body;
 
-  // Verify invoice exists
-  const invoice = await Invoice.findById(invoiceId);
-  if (!invoice) {
+  let sourceInvoice = null;
+
+  // Find invoice either by ID or by Lead ID or Booking ID
+  if (invoiceId) {
+    sourceInvoice = await Invoice.findById(invoiceId);
+  } else if (leadId) {
+    sourceInvoice = await Invoice.findOne({ lead: leadId });
+  } else if (bookingId) {
+    sourceInvoice = await Invoice.findOne({ booking: bookingId });
+  }
+
+  if (!sourceInvoice) {
     res.status(404);
-    throw new Error('Invoice not found');
+    throw new Error('Invoice not found for this transaction');
   }
 
   // Check if payment amount doesn't exceed balance
-  if (amount > invoice.balance) {
+  if (amount > sourceInvoice.balance + 0.01) { // 0.01 for rounding issues
     res.status(400);
-    throw new Error('Payment amount cannot exceed invoice balance');
+    throw new Error(`Payment amount ($${amount}) cannot exceed current balance ($${sourceInvoice.balance})`);
   }
 
   const payment = await Payment.create({
-    invoice: invoiceId,
-    booking: bookingId || invoice.booking,
-    lead: leadId || invoice.lead,
+    invoice: sourceInvoice._id,
+    booking: bookingId || sourceInvoice.booking,
+    lead: leadId || sourceInvoice.lead,
     amount,
     method,
     transactionId,
@@ -559,24 +569,55 @@ export const recordPayment = asyncHandler(async (req, res) => {
   });
 
   // Update invoice
-  invoice.paidAmount += amount;
-  invoice.balance = invoice.finalAmount - invoice.paidAmount;
+  sourceInvoice.paidAmount = (sourceInvoice.paidAmount || 0) + amount;
+  sourceInvoice.balance = sourceInvoice.finalAmount - sourceInvoice.paidAmount;
   
-  if (invoice.balance <= 0) {
-    invoice.status = 'Paid';
-    invoice.paidAt = new Date();
+  if (sourceInvoice.balance <= 0) {
+    sourceInvoice.status = 'Paid';
+    sourceInvoice.paidAt = new Date();
   } else {
-    invoice.status = 'Partial';
+    sourceInvoice.status = 'Partial';
   }
   
-  await invoice.save();
+  await sourceInvoice.save();
+
+  // Update lead if linked
+  if (sourceInvoice.lead) {
+    await Lead.findByIdAndUpdate(sourceInvoice.lead, {
+      paidAmount: sourceInvoice.paidAmount,
+      balance: sourceInvoice.balance,
+      status: sourceInvoice.status === 'Paid' ? 'Confirmed' : 'Invoice' // Keep as Invoice or move to Receipt?
+    });
+  }
 
   // Update booking if linked
-  if (bookingId) {
-    await Booking.findByIdAndUpdate(bookingId, {
-      paidAmount: invoice.paidAmount,
-      balance: invoice.balance
+  if (sourceInvoice.booking || bookingId) {
+    await Booking.findByIdAndUpdate(sourceInvoice.booking || bookingId, {
+      paidAmount: sourceInvoice.paidAmount,
+      balance: sourceInvoice.balance
     });
+  }
+
+  // Create a Receipt document automatically
+  try {
+    await Receipt.create({
+      invoice: sourceInvoice._id,
+      lead: sourceInvoice.lead,
+      booking: sourceInvoice.booking,
+      customerName: sourceInvoice.customerName,
+      email: sourceInvoice.email,
+      phone: sourceInvoice.phone,
+      amount: amount, // The single payment amount
+      discountValue: 0,
+      finalAmount: amount,
+      paymentMethod: method,
+      notes: notes || `Partial payment for Invoice ${sourceInvoice.invoiceNumber}`,
+      createdBy: req.user._id,
+      status: 'Received'
+    });
+  } catch (receiptError) {
+    console.error('Error creating linked receipt:', receiptError);
+    // Continue anyway as the payment was recorded
   }
 
   await ActivityLog.create({
@@ -584,16 +625,20 @@ export const recordPayment = asyncHandler(async (req, res) => {
     action: 'record_payment',
     resource: 'payment',
     resourceId: payment._id,
-    description: `Recorded payment of $${amount} for invoice ${invoice.invoiceNumber}`
+    description: `Recorded payment of $${amount} for invoice ${sourceInvoice.invoiceNumber}. New balance: $${sourceInvoice.balance}`
   });
 
   // Send payment receipt email
-  const receiptHtml = paymentReceiptTemplate(payment, invoice);
-  await sendEmail({
-    to: invoice.email,
-    subject: `Payment Receipt - ${payment.paymentId}`,
-    html: receiptHtml
-  });
+  try {
+    const receiptHtml = paymentReceiptTemplate(payment, sourceInvoice);
+    await sendEmail({
+      to: sourceInvoice.email,
+      subject: `Payment Receipt - ${payment.paymentId} (Balance: $${sourceInvoice.balance})`,
+      html: receiptHtml
+    });
+  } catch (emailError) {
+    console.error('Error sending payment receipt email:', emailError);
+  }
 
   const populatedPayment = await Payment.findById(payment._id)
     .populate('invoice', 'invoiceNumber')

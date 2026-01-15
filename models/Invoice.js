@@ -80,10 +80,15 @@ const invoiceSchema = new mongoose.Schema({
 });
 
 // Generate invoice number before saving
-invoiceSchema.pre('save', async function(next) {
+invoiceSchema.pre('validate', function(next) {
   // Calculate balance
-  this.balance = this.finalAmount - this.paidAmount;
+  if (this.finalAmount !== undefined) {
+    this.balance = this.finalAmount - (this.paidAmount || 0);
+  }
+  next();
+});
 
+invoiceSchema.pre('save', async function(next) {
   if (this.isNew) {
     const date = new Date();
     const year = date.getFullYear();

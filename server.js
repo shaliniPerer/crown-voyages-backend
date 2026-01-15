@@ -17,12 +17,16 @@ import roomRoutes from './routes/roomRoutes.js';
 import billingRoutes from './routes/billingRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
+import { initializeScheduler } from './utils/scheduler.js';
 
 // Load environment variables
 dotenv.config();
 
 // Connect to Database
-connectDB();
+connectDB().then(() => {
+  // Initialize scheduled tasks once DB is connected
+  initializeScheduler();
+});
 
 // Initialize Express
 const app = express();

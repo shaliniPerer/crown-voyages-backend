@@ -50,4 +50,7 @@ router.post('/reminders', isFinanceOrAdmin, createReminder);
 router.patch('/reminders/:id', isFinanceOrAdmin, updateReminder);
 router.delete('/reminders/:id', isFinanceOrAdmin, deleteReminder);
 
+// History route
+router.get('/history', getBillingHistory);
+
 export default router;
