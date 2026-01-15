@@ -95,6 +95,11 @@ export const getInvoices = asyncHandler(async (req, res) => {
     query.createdAt = { $gte: new Date(startDate), $lte: new Date(endDate) };
   }
 
+  // Filter by createdBy for Sales Agent
+  if (req.user.role === 'Sales Agent') {
+    query.createdBy = req.user._id;
+  }
+
   const invoices = await Invoice.find(query)
     .populate('booking', 'bookingNumber guestName')
     .populate('createdBy', 'name')
@@ -118,6 +123,15 @@ export const getInvoiceById = asyncHandler(async (req, res) => {
   if (!invoice) {
     res.status(404);
     throw new Error('Invoice not found');
+  }
+
+  // Check if Sales Agent is authorized to view this invoice
+  if (req.user.role === 'Sales Agent') {
+    const creatorId = invoice.createdBy?._id ? invoice.createdBy._id.toString() : invoice.createdBy?.toString();
+    if (creatorId !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to view this invoice');
+    }
   }
 
   res.json({
@@ -477,6 +491,11 @@ export const getPayments = asyncHandler(async (req, res) => {
   if (method) query.method = method;
   if (startDate && endDate) {
     query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+  }
+
+  // Filter by processedBy for Sales Agent
+  if (req.user.role === 'Sales Agent') {
+    query.processedBy = req.user._id;
   }
 
   const payments = await Payment.find(query)

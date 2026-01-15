@@ -18,11 +18,17 @@ export const getLeads = asyncHandler(async (req, res) => {
   if (status) query.status = status;
   if (source) query.source = source;
 
+  // Filter by createdBy for Sales Agent
+  if (req.user.role === 'Sales Agent') {
+    query.createdBy = req.user._id;
+  }
+
   try {
     const leads = await Lead.find(query)
       .populate('resort', 'name location starRating description amenities mealPlan images')
       .populate('room', 'roomType roomName price description size bedType maxAdults maxChildren amenities images')
       .populate('booking', 'bookingNumber')
+      .populate('createdBy', 'name role')
       .sort({ createdAt: -1 });
 
     res.json({
@@ -195,9 +201,15 @@ export const getQuotations = asyncHandler(async (req, res) => {
   if (status) query.status = status;
   if (lead) query.lead = lead;
 
+  // Filter by createdBy for Sales Agent
+  if (req.user.role === 'Sales Agent') {
+    query.createdBy = req.user._id;
+  }
+
   const quotations = await Quotation.find(query)
     .populate('resort', 'name location starRating')
     .populate('room', 'roomType price')
+    .populate('createdBy', 'name')
     .populate({
       path: 'lead',
       select: 'customerName booking leadNumber', 
@@ -581,6 +593,11 @@ export const getBookings = asyncHandler(async (req, res) => {
     query.checkIn = { $gte: new Date(startDate), $lte: new Date(endDate) };
   }
 
+  // Filter by createdBy for Sales Agent
+  if (req.user.role === 'Sales Agent') {
+    query.createdBy = req.user._id;
+  }
+
   const bookings = await Booking.find(query)
     .populate('resort', 'name location starRating images')
     .populate('room', 'roomType roomName price images')
@@ -607,6 +624,15 @@ export const getBookingById = asyncHandler(async (req, res) => {
   if (!booking) {
     res.status(404);
     throw new Error('Booking not found');
+  }
+
+  // Check if Sales Agent is authorized to view this booking
+  if (req.user.role === 'Sales Agent') {
+    const creatorId = booking.createdBy?._id ? booking.createdBy._id.toString() : booking.createdBy?.toString();
+    if (creatorId !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to view this booking');
+    }
   }
 
   res.json({
@@ -720,7 +746,13 @@ export const getInvoices = asyncHandler(async (req, res) => {
   const query = {};
   if (lead) query.lead = lead;
 
+  // Filter by createdBy for Sales Agent
+  if (req.user.role === 'Sales Agent') {
+    query.createdBy = req.user._id;
+  }
+
   const invoices = await Invoice.find(query)
+    .populate('createdBy', 'name')
     .populate({
       path: 'lead',
       populate: { path: 'booking', select: 'bookingNumber' }
@@ -870,7 +902,13 @@ export const getReceipts = asyncHandler(async (req, res) => {
   const query = {};
   if (lead) query.lead = lead;
 
+  // Filter by createdBy for Sales Agent
+  if (req.user.role === 'Sales Agent') {
+    query.createdBy = req.user._id;
+  }
+
   const receipts = await Receipt.find(query)
+    .populate('createdBy', 'name')
     .populate({
       path: 'lead',
       populate: { path: 'booking', select: 'bookingNumber' }
