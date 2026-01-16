@@ -14,6 +14,10 @@ const receiptSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Lead'
   },
+  booking: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Booking'
+  },
   customerName: {
     type: String,
     required: [true, 'Please provide customer name'],

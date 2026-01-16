@@ -34,6 +34,18 @@ const invoiceSchema = new mongoose.Schema({
     required: [true, 'Please provide base amount'],
     min: [0, 'Amount cannot be negative']
   },
+  totalNetAmount: {
+    type: Number,
+    default: 0
+  },
+  greenTax: {
+    type: Number,
+    default: 0
+  },
+  tgst: {
+    type: Number,
+    default: 0
+  },
   discountValue: {
     type: Number,
     default: 0,
@@ -68,6 +80,32 @@ const invoiceSchema = new mongoose.Schema({
     trim: true
   },
   sentAt: {
+    type: Date
+  },
+  remindersEnabled: {
+    type: Boolean,
+    default: true
+  },
+  customReminderDate: {
+    type: Date
+  },
+  reminderConfigs: {
+    type: Map,
+    of: {
+      days: Number,
+      frequency: {
+        type: String,
+        enum: ['once', 'twice', 'daily', 'weekly'],
+        default: 'once'
+      },
+      enabled: {
+        type: Boolean,
+        default: true
+      }
+    },
+    default: {}
+  },
+  lastReminderSentAt: {
     type: Date
   },
   createdBy: {

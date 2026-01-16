@@ -49,6 +49,7 @@ export const sendPaymentReminderEmail = async (invoice, reminderType, customTemp
     html = customTemplate
       .replace(/{customer_name}/g, invoice.customerName || 'Valued Client')
       .replace(/{invoice_number}/g, invoice.invoiceNumber || 'N/A')
+      .replace(/{id}/g, invoice.invoiceNumber || 'N/A')
       .replace(/{amount}/g, (invoice.balance || invoice.finalAmount || 0).toFixed(2))
       .replace(/{due_date}/g, invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A');
     

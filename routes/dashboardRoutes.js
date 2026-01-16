@@ -5,7 +5,11 @@ import {
   getOutstandingPayments,
   getRevenueChart,
   getLeadFunnel,
-  getLeadStatusDistribution
+  getLeadStatusDistribution,
+  getVoucherTrends,
+  getResortAnalysis,
+  getRoomAnalysis,
+  getUserAnalysis
 } from '../controllers/dashboardController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -20,5 +24,9 @@ router.get('/outstanding-payments', getOutstandingPayments);
 router.get('/revenue-chart', getRevenueChart);
 router.get('/lead-funnel', getLeadFunnel);
 router.get('/lead-status', getLeadStatusDistribution);
+router.get('/voucher-trends', getVoucherTrends);
+router.get('/resort-analysis', getResortAnalysis);
+router.get('/room-analysis', getRoomAnalysis);
+router.get('/user-analysis', getUserAnalysis);
 
 export default router;

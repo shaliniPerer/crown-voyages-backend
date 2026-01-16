@@ -5,10 +5,11 @@ import Invoice from '../models/Invoice.js';
 import Receipt from '../models/Receipt.js';
 import Lead from '../models/Lead.js';
 import Room from '../models/Room.js';
+import Voucher from '../models/Voucher.js';
 import ActivityLog from '../models/ActivityLog.js';
 import { sendEmail } from '../config/email.js';
-import { quotationEmailTemplate, bookingConfirmationTemplate } from '../utils/emailTemplates.js';
-import { generateQuotationPDF, generateInvoicePDF, generateReceiptPDF, generateReportPDF } from '../utils/pdfGenerator.js';
+import { quotationEmailTemplate, bookingConfirmationTemplate, voucherEmailTemplate } from '../utils/emailTemplates.js';
+import { generateQuotationPDF, generateInvoicePDF, generateReceiptPDF, generateReportPDF, generateVoucherPDF } from '../utils/pdfGenerator.js';
 
 const checkRoomAvailability = async (roomId, checkIn, checkOut, excludeBookingId = null) => {
   const room = await Room.findById(roomId);
@@ -873,7 +874,10 @@ export const createInvoice = asyncHandler(async (req, res) => {
     customerName,
     email,
     phone,
-    amount,
+    amount, // This will be treated as totalNetAmount
+    totalNetAmount,
+    greenTax = 0,
+    tgst = 0,
     discountValue = 0,
     finalAmount,
     dueDate,
@@ -886,7 +890,7 @@ export const createInvoice = asyncHandler(async (req, res) => {
   const missingFields = [];
   if (!customerName) missingFields.push('customerName');
   if (!email) missingFields.push('email');
-  if (amount === undefined || amount === null) missingFields.push('amount');
+  if (amount === undefined && totalNetAmount === undefined) missingFields.push('amount');
   if (finalAmount === undefined || finalAmount === null) missingFields.push('finalAmount');
 
   if (missingFields.length > 0) {
@@ -906,7 +910,10 @@ export const createInvoice = asyncHandler(async (req, res) => {
     customerName,
     email,
     phone,
-    amount,
+    amount: totalNetAmount || amount,
+    totalNetAmount: totalNetAmount || amount,
+    greenTax,
+    tgst,
     discountValue,
     finalAmount,
     dueDate,
@@ -1137,8 +1144,8 @@ export const createReceipt = asyncHandler(async (req, res) => {
         leadDoc.status = 'Receipt';
       }
       
-      await leadDoc.save();
-      console.log(`✅ Lead ${leadDoc.leadNumber} updated. Total: ${leadDoc.totalAmount}, Paid: ${leadDoc.paidAmount}, Balance: ${leadDoc.balance}`);
+      const updatedLead = await leadDoc.save();
+      console.log(`✅ Lead ${leadDoc.leadNumber} updated. Status: ${updatedLead.status}, Total: ${leadDoc.totalAmount}, Paid: ${leadDoc.paidAmount}, Balance: ${leadDoc.balance}`);
     }
   }
 
@@ -1155,6 +1162,11 @@ export const createReceipt = asyncHandler(async (req, res) => {
       }
       await linkedInvoice.save();
       console.log(`✅ Linked Invoice ${linkedInvoice.invoiceNumber} updated. New balance: ${linkedInvoice.balance}`);
+      
+      // Also update lead status if the invoice is partial
+      if (lead && linkedInvoice.status === 'Partial') {
+         await Lead.findByIdAndUpdate(lead, { status: 'Receipt' });
+      }
     }
   }
 
@@ -1361,7 +1373,11 @@ export const exportInvoicePDF = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findById(req.params.id)
     .populate({
       path: 'lead',
-      populate: { path: 'booking', select: 'bookingNumber' }
+      populate: [
+        { path: 'resort', select: 'name location' },
+        { path: 'room', select: 'roomType roomName' },
+        { path: 'booking', select: 'bookingNumber' }
+      ]
     })
     .populate('booking');
 
@@ -1398,6 +1414,180 @@ export const exportReceiptPDF = asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=receipt-${receipt.receiptNumber}.pdf`);
   res.send(pdfBuffer);
+});
+
+// @desc    Get all vouchers
+// @route   GET /api/bookings/vouchers
+// @access  Private
+export const getVouchers = asyncHandler(async (req, res) => {
+  const { leadId, bookingId } = req.query;
+  let query = {};
+  if (leadId) query.lead = leadId;
+  if (bookingId) query.booking = bookingId;
+
+  // Filter by createdBy for Sales Agent
+  if (req.user.role === 'Sales Agent') {
+    query.createdBy = req.user._id;
+  }
+
+  const vouchers = await Voucher.find(query)
+    .populate('lead', 'leadNumber guestName')
+    .populate('booking', 'bookingNumber guestName')
+    .populate('createdBy', 'name')
+    .sort({ createdAt: -1 });
+
+  res.json({
+    success: true,
+    count: vouchers.length,
+    data: vouchers
+  });
+});
+
+// @desc    Create new voucher
+// @route   POST /api/bookings/voucher
+// @access  Private
+export const createVoucher = asyncHandler(async (req, res) => {
+  const { lead, booking, customerName, email, resortName, roomName, checkIn, checkOut } = req.body;
+
+  try {
+    const voucher = await Voucher.create({
+      lead,
+      booking,
+      customerName,
+      email,
+      resortName,
+      roomName,
+      checkIn: checkIn ? new Date(checkIn) : undefined,
+      checkOut: checkOut ? new Date(checkOut) : undefined,
+      createdBy: req.user._id
+    });
+
+    await ActivityLog.create({
+      user: req.user._id,
+      action: 'create',
+      resource: 'voucher',
+      resourceId: voucher._id,
+      description: `Created voucher ${voucher.voucherNumber} for ${customerName}`
+    });
+
+    res.status(201).json({
+      success: true,
+      data: voucher
+    });
+  } catch (error) {
+    console.error('Error creating voucher:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Voucher creation failed'
+    });
+  }
+});
+
+// @desc    Export voucher as PDF
+// @route   GET /api/bookings/voucher/:id/pdf
+// @access  Private
+export const exportVoucherPDF = asyncHandler(async (req, res) => {
+  // First try to find as a Lead
+  let booking = await Lead.findById(req.params.id)
+    .populate('resort', 'name location images description')
+    .populate('room', 'roomName roomType images description size bedType')
+    .populate('booking', 'bookingNumber');
+
+  // If not found as lead, try as a Booking
+  if (!booking) {
+    booking = await Booking.findById(req.params.id)
+      .populate('resort', 'name location images description')
+      .populate('room', 'roomName roomType images description size bedType');
+  }
+
+  // If not found, try as a Voucher
+  if (!booking) {
+    booking = await Voucher.findById(req.params.id)
+      .populate('resort', 'name location images description')
+      .populate('room', 'roomName roomType images description size bedType');
+    
+    // Normalize voucher fields for PDF generator if needed
+    if (booking) {
+      booking = booking.toObject();
+    }
+  }
+
+  if (!booking) {
+    res.status(404);
+    throw new Error('Booking, Lead or Voucher not found');
+  }
+
+  const pdfBuffer = await generateVoucherPDF(booking);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  const filename = booking.bookingNumber || booking.leadNumber || 'voucher';
+  res.setHeader('Content-Disposition', `attachment; filename=voucher-${filename}.pdf`);
+  res.send(pdfBuffer);
+});
+
+// @desc    Send voucher as email
+// @route   POST /api/bookings/voucher/:id/send
+// @access  Private
+export const sendVoucherEmail = asyncHandler(async (req, res) => {
+  // First try to find as a Lead
+  let booking = await Lead.findById(req.params.id)
+    .populate('resort', 'name location images description')
+    .populate('room', 'roomName roomType images description size bedType')
+    .populate('booking', 'bookingNumber');
+
+  // If not found as lead, try as a Booking
+  if (!booking) {
+    booking = await Booking.findById(req.params.id)
+      .populate('resort', 'name location images description')
+      .populate('room', 'roomName roomType images description size bedType');
+  }
+
+  // If not found, try as a Voucher
+  if (!booking) {
+    booking = await Voucher.findById(req.params.id)
+      .populate('resort', 'name location images description')
+      .populate('room', 'roomName roomType images description size bedType');
+    
+    // Normalize voucher fields for PDF generator if needed
+    if (booking) {
+      booking = booking.toObject();
+    }
+  }
+
+  if (!booking) {
+    res.status(404);
+    throw new Error('Booking, Lead or Voucher not found');
+  }
+
+  const pdfBuffer = await generateVoucherPDF(booking);
+  const emailHtml = voucherEmailTemplate(booking);
+  const voucherName = booking.bookingNumber || booking.leadNumber || 'Reference';
+
+  await sendEmail({
+    to: booking.email,
+    subject: `Your Booking Voucher - VCH-${voucherName} (Confirmed)`,
+    html: emailHtml,
+    attachments: [
+      {
+        filename: `voucher-${voucherName}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }
+    ]
+  });
+
+  await ActivityLog.create({
+    user: req.user._id,
+    action: 'send_email',
+    resource: 'voucher',
+    resourceId: booking._id,
+    description: `Sent booking voucher email to ${booking.email}`
+  });
+
+  res.json({
+    success: true,
+    message: 'Voucher email sent successfully'
+  });
 });
 
 // @desc    Delete quotation

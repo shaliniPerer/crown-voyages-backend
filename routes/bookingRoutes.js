@@ -24,6 +24,10 @@ import {
   createReceipt,
   sendReceiptEmail,
   exportReceiptPDF,
+  getVouchers,
+  createVoucher,
+  exportVoucherPDF,
+  sendVoucherEmail,
   getReceipts,
   getReports,
   deleteQuotation,
@@ -71,6 +75,10 @@ router.delete('/invoice/:id', deleteInvoice);
 router.get('/receipts', getReceipts);
 router.post('/receipt', createReceipt);
 router.get('/receipt/:id/pdf', exportReceiptPDF);
+router.get('/vouchers', getVouchers);
+router.post('/voucher', createVoucher);
+router.get('/voucher/:id/pdf', exportVoucherPDF);
+router.post('/voucher/:id/send', sendVoucherEmail);
 router.post('/receipt/:id/send-email', sendReceiptEmail);
 router.delete('/receipt/:id', deleteReceipt);
 

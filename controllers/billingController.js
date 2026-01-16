@@ -39,6 +39,9 @@ export const getBillingStats = asyncHandler(async (req, res) => {
     case 'annually':
       startDate = new Date(now.getFullYear(), 0, 1);
       break;
+    case 'all':
+      startDate = new Date(0);
+      break;
     default:
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
   }
@@ -169,10 +172,16 @@ export const createInvoice = asyncHandler(async (req, res) => {
   }
 
   // Calculate final amount
-  const finalAmount = invoiceData.totalAmount + (invoiceData.taxAmount || 0) - (invoiceData.discountAmount || 0);
+  const finalAmount = (invoiceData.totalNetAmount || invoiceData.totalAmount) + 
+                     (invoiceData.greenTax || 0) + 
+                     (invoiceData.tgst || 0) - 
+                     (invoiceData.discountAmount || 0);
 
   const invoice = await Invoice.create({
     ...invoiceData,
+    amount: invoiceData.totalNetAmount || invoiceData.totalAmount,
+    totalNetAmount: invoiceData.totalNetAmount || invoiceData.totalAmount,
+    discountValue: invoiceData.discountAmount || 0,
     booking: bookingId,
     lead: leadId,
     finalAmount,
@@ -211,11 +220,18 @@ export const updateInvoice = asyncHandler(async (req, res) => {
   }
 
   // Recalculate final amount if amounts changed
-  if (req.body.totalAmount || req.body.taxAmount || req.body.discountAmount) {
-    const totalAmount = req.body.totalAmount || invoice.totalAmount;
-    const taxAmount = req.body.taxAmount !== undefined ? req.body.taxAmount : invoice.taxAmount;
-    const discountAmount = req.body.discountAmount !== undefined ? req.body.discountAmount : invoice.discountAmount;
-    req.body.finalAmount = totalAmount + taxAmount - discountAmount;
+  if (req.body.totalAmount || req.body.totalNetAmount || req.body.greenTax || req.body.tgst || req.body.discountAmount) {
+    const netAmount = req.body.totalNetAmount || req.body.totalAmount || invoice.totalNetAmount || invoice.amount;
+    const greenTax = req.body.greenTax !== undefined ? req.body.greenTax : (invoice.greenTax || 0);
+    const tgst = req.body.tgst !== undefined ? req.body.tgst : (invoice.tgst || 0);
+    const discountAmount = req.body.discountAmount !== undefined ? req.body.discountAmount : (invoice.discountAmount || invoice.discountValue || 0);
+    
+    req.body.finalAmount = netAmount + greenTax + tgst - discountAmount;
+    req.body.amount = netAmount;
+    req.body.totalAmount = netAmount;
+    req.body.totalNetAmount = netAmount;
+    req.body.discountValue = discountAmount;
+    req.body.balance = req.body.finalAmount - (invoice.paidAmount || 0);
   }
 
   invoice = await Invoice.findByIdAndUpdate(
@@ -465,6 +481,14 @@ export const sendPaymentReceiptEmail = asyncHandler(async (req, res) => {
 // @access  Private
 export const exportInvoicePDF = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findById(req.params.id)
+    .populate({
+      path: 'lead',
+      populate: [
+        { path: 'resort', select: 'name location' },
+        { path: 'room', select: 'roomType roomName' },
+        { path: 'booking', select: 'bookingNumber' }
+      ]
+    })
     .populate('booking');
 
   if (!invoice) {
@@ -586,7 +610,7 @@ export const recordPayment = asyncHandler(async (req, res) => {
     await Lead.findByIdAndUpdate(sourceInvoice.lead, {
       paidAmount: sourceInvoice.paidAmount,
       balance: sourceInvoice.balance,
-      status: sourceInvoice.status === 'Paid' ? 'Confirmed' : 'Invoice' // Keep as Invoice or move to Receipt?
+      status: sourceInvoice.status === 'Paid' ? 'Confirmed' : 'Receipt'
     });
   }
 
@@ -594,7 +618,8 @@ export const recordPayment = asyncHandler(async (req, res) => {
   if (sourceInvoice.booking || bookingId) {
     await Booking.findByIdAndUpdate(sourceInvoice.booking || bookingId, {
       paidAmount: sourceInvoice.paidAmount,
-      balance: sourceInvoice.balance
+      balance: sourceInvoice.balance,
+      status: sourceInvoice.status === 'Paid' ? 'Confirmed' : 'Pending'
     });
   }
 
