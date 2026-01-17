@@ -212,6 +212,18 @@ export const updateLead = asyncHandler(async (req, res) => {
       description: `Updated lead: ${lead.guestName}`
     });
 
+    // Sync with Booking if exists
+    if (lead.booking) {
+      const bookingDoc = await Booking.findById(lead.booking);
+      if (bookingDoc) {
+        // Sync relevant fields
+        bookingDoc.totalAmount = lead.totalAmount;
+        bookingDoc.paidAmount = lead.paidAmount;
+        // status sync might be tricky, but let's sync finances
+        await bookingDoc.save();
+      }
+    }
+
     res.json({
       success: true,
       data: lead
@@ -358,9 +370,15 @@ export const createQuotation = asyncHandler(async (req, res) => {
     description: `Created quotation ${quotationNumber} for ${customerName}`
   });
 
-  // Update lead status to 'Quotation'
+  // Update lead status and total amount to match quotation
   if (leadId) {
-    await Lead.findByIdAndUpdate(leadId, { status: 'Quotation' });
+    const leadDoc = await Lead.findById(leadId);
+    if (leadDoc) {
+      leadDoc.status = 'Quotation';
+      leadDoc.totalAmount = finalAmount;
+      // balance is updated in pre-save hook
+      await leadDoc.save();
+    }
   }
 
   // Populate quotation with full lead details including savedBookings and passengerDetails
@@ -636,9 +654,16 @@ export const convertToBooking = asyncHandler(async (req, res) => {
   quotation.booking = booking._id;
   await quotation.save();
 
-  // Update Lead with Booking reference
+  // Update Lead with Booking reference and sync price
   if (quotation.lead) {
-    await Lead.findByIdAndUpdate(quotation.lead, { booking: booking._id, status: 'Converted' });
+    const leadDoc = await Lead.findById(quotation.lead);
+    if (leadDoc) {
+      leadDoc.booking = booking._id;
+      leadDoc.status = 'Converted';
+      leadDoc.totalAmount = quotation.totalAmount;
+      // balance is updated in pre-save hook
+      await leadDoc.save();
+    }
   }
 
   await ActivityLog.create({
@@ -804,6 +829,14 @@ export const updateBooking = asyncHandler(async (req, res) => {
     description: `Updated booking ${booking.bookingNumber}`
   });
 
+  // Sync with Lead if exists
+  const leadDoc = await Lead.findOne({ booking: booking._id });
+  if (leadDoc) {
+    leadDoc.totalAmount = booking.totalAmount;
+    leadDoc.paidAmount = booking.paidAmount;
+    await leadDoc.save();
+  }
+
   res.json({
     success: true,
     data: booking
@@ -934,9 +967,15 @@ export const createInvoice = asyncHandler(async (req, res) => {
     description: `Created invoice ${invoiceNumber} for ${customerName}`
   });
 
-  // Update lead status to 'Invoice'
+  // Update lead status and total amount to match invoice
   if (lead) {
-    await Lead.findByIdAndUpdate(lead, { status: 'Invoice' });
+    const leadDoc = await Lead.findById(lead);
+    if (leadDoc) {
+      leadDoc.status = 'Invoice';
+      leadDoc.totalAmount = finalAmount;
+      // balance is updated in pre-save hook
+      await leadDoc.save();
+    }
   }
 
   const populatedInvoice = await Invoice.findById(invoice._id).populate('lead');
@@ -1026,6 +1065,7 @@ export const getReceipts = asyncHandler(async (req, res) => {
       path: 'lead',
       populate: { path: 'booking', select: 'bookingNumber' }
     })
+    .populate('invoice', 'invoiceNumber finalAmount')
     .sort({ createdAt: -1 });
 
   res.json({
@@ -1135,10 +1175,10 @@ export const createReceipt = asyncHandler(async (req, res) => {
 
       // Update paid amount and balance
       leadDoc.paidAmount = (leadDoc.paidAmount || 0) + finalAmount;
-      leadDoc.balance = Math.max(0, (leadDoc.totalAmount || 0) - leadDoc.paidAmount);
+      // Balance is updated in pre-save hook
       
       // Update status
-      if (leadDoc.balance <= 0) {
+      if (leadDoc.paidAmount >= leadDoc.totalAmount) {
         leadDoc.status = 'Confirmed';
       } else {
         leadDoc.status = 'Receipt';
@@ -1146,6 +1186,25 @@ export const createReceipt = asyncHandler(async (req, res) => {
       
       const updatedLead = await leadDoc.save();
       console.log(`✅ Lead ${leadDoc.leadNumber} updated. Status: ${updatedLead.status}, Total: ${leadDoc.totalAmount}, Paid: ${leadDoc.paidAmount}, Balance: ${leadDoc.balance}`);
+
+      // Sync with Booking if exists
+      if (updatedLead.booking || booking) {
+        const bookingId = updatedLead.booking || booking;
+        const bookingDoc = await Booking.findById(bookingId);
+        if (bookingDoc) {
+          bookingDoc.paidAmount = updatedLead.paidAmount;
+          bookingDoc.totalAmount = updatedLead.totalAmount;
+          // bookingDoc.balance is updated in pre-save hook
+          await bookingDoc.save();
+          console.log(`✅ Linked Booking updated: ${bookingDoc.bookingNumber}`);
+        }
+      }
+      
+      // Update the receipt's remaining balance snapshot to be accurate
+      receipt.remainingBalance = updatedLead.balance;
+      receipt.bookingTotal = updatedLead.totalAmount;
+      receipt.finalAmount = finalAmount; // Explicitly ensure this is correct
+      await receipt.save();
     }
   }
 
@@ -1161,11 +1220,21 @@ export const createReceipt = asyncHandler(async (req, res) => {
         linkedInvoice.status = 'Partial';
       }
       await linkedInvoice.save();
+      
+      // Update the receipt's remaining balance snapshot again if it was an invoice-specific receipt
+      // This is more accurate if the receipt was meant to pay off a specific invoice
+      receipt.remainingBalance = linkedInvoice.balance;
+      await receipt.save();
+
       console.log(`✅ Linked Invoice ${linkedInvoice.invoiceNumber} updated. New balance: ${linkedInvoice.balance}`);
       
       // Also update lead status if the invoice is partial
       if (lead && linkedInvoice.status === 'Partial') {
-         await Lead.findByIdAndUpdate(lead, { status: 'Receipt' });
+         const lDoc = await Lead.findById(lead);
+         if (lDoc) {
+           lDoc.status = 'Receipt';
+           await lDoc.save();
+         }
       }
     }
   }
@@ -1748,7 +1817,19 @@ export const deleteInvoice = asyncHandler(async (req, res) => {
     throw new Error('Invoice not found');
   }
 
+  const { lead } = invoice;
+
   await invoice.deleteOne();
+
+  // Update lead status if needed
+  if (lead) {
+    const otherInvoices = await Invoice.find({ lead, _id: { $ne: req.params.id } });
+    if (otherInvoices.length === 0) {
+      // Revert status to Quotation or Pending if no other invoices exist
+      const otherQuotations = await Quotation.find({ lead });
+      await Lead.findByIdAndUpdate(lead, { status: otherQuotations.length > 0 ? 'Quotation' : 'Pending' });
+    }
+  }
 
   await ActivityLog.create({
     user: req.user._id,
@@ -1775,7 +1856,56 @@ export const deleteReceipt = asyncHandler(async (req, res) => {
     throw new Error('Receipt not found');
   }
 
+  const { lead, invoice, finalAmount } = receipt;
+
   await receipt.deleteOne();
+
+  // Update lead balance
+  if (lead) {
+    const leadDoc = await Lead.findById(lead);
+    if (leadDoc) {
+      leadDoc.paidAmount = Math.max(0, (leadDoc.paidAmount || 0) - finalAmount);
+      // leadDoc.balance is updated in pre-save hook
+      
+      // Update status if needed
+      if (leadDoc.paidAmount <= 0) {
+        // Check if there are invoices left
+        const invoices = await Invoice.find({ lead });
+        leadDoc.status = invoices.length > 0 ? 'Invoice' : 'Quotation';
+      }
+      
+      const updatedLead = await leadDoc.save();
+
+      // Sync with Booking if exists
+      if (updatedLead.booking || booking) {
+        const bookingId = updatedLead.booking || booking;
+        const bookingDoc = await Booking.findById(bookingId);
+        if (bookingDoc) {
+          bookingDoc.paidAmount = updatedLead.paidAmount;
+          // bookingDoc.balance is updated in pre-save hook
+          await bookingDoc.save();
+          console.log(`✅ Linked Booking updated after receipt deletion: ${bookingDoc.bookingNumber}`);
+        }
+      }
+    }
+  }
+
+  // Update invoice balance if linked
+  if (invoice) {
+    const invoiceDoc = await Invoice.findById(invoice);
+    if (invoiceDoc) {
+      invoiceDoc.paidAmount = Math.max(0, (invoiceDoc.paidAmount || 0) - finalAmount);
+      // invoiceDoc.balance is updated in pre-validate hook
+      
+      if (invoiceDoc.paidAmount <= 0) {
+        invoiceDoc.status = 'Sent';
+      } else if (invoiceDoc.paidAmount < invoiceDoc.finalAmount) {
+        invoiceDoc.status = 'Partial';
+      }
+      
+      await invoiceDoc.save();
+    }
+  }
 
   await ActivityLog.create({
     user: req.user._id,

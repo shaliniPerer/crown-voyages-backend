@@ -128,7 +128,7 @@ export const generateQuotationPDF = async (quotation) => {
       const detailsY = 130;
       doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('QUOTATION DETAILS', 350, detailsY, { align: 'right', width: 200 });
       doc.fontSize(10).font('Helvetica').fillColor(tw.textDark)
-         .text(`Ref #: ${quotation.quotationNumber}`, 350, detailsY + 20, { align: 'right', width: 200 });
+         .text(`Quoatation Number: ${quotation.quotationNumber}`, 350, detailsY + 20, { align: 'right', width: 200 });
       doc.text(`Date: ${new Date(quotation.createdAt).toLocaleDateString()}`, 350, detailsY + 35, { align: 'right', width: 200 });
       
       doc.y = 220;
@@ -403,141 +403,6 @@ export const generateQuotationPDF = async (quotation) => {
          .text(quotation.phone || '-', 120, guestBoxY + 70);
 
       doc.y += 110;
-
-
-      // --- ALL PASSENGERS DETAILS ---
-      if (quotation.lead?.passengerDetails && quotation.lead.passengerDetails.length > 0) {
-         checkPageBreak(50);
-         doc.font('Helvetica-Bold').fontSize(14).fillColor(tw.textDark).text('All Passengers Details', 40, doc.y);
-         doc.y += 15;
-
-         for (let pIdx = 0; pIdx < quotation.lead.passengerDetails.length; pIdx++) {
-            const passengerRoom = quotation.lead.passengerDetails[pIdx];
-            
-            // Check space for header + at least one adult card
-            checkPageBreak(250);
-
-            const pBoxX = 40;
-            const pBoxStartY = doc.y;
-            const pBoxWidth = 515;
-
-            // Container
-            doc.roundedRect(pBoxX, pBoxStartY, pBoxWidth, 20, 10).stroke(tw.purple200); // We'll stroke the whole thing later or grow it.
-            // Actually, simpler to just draw contents and frame it conceptually or strictly
-            
-            // Header Line
-            doc.fillColor(tw.purple700).fontSize(12).font('Helvetica-Bold')
-               .text(`${passengerRoom.bookingName || 'Booking'} - ${passengerRoom.roomName || 'Room'}`, pBoxX + 15, pBoxStartY + 15);
-            
-            // Badge Room #
-            doc.roundedRect(pBoxX + pBoxWidth - 80, pBoxStartY + 12, 60, 20, 10).fill(tw.purple100);
-            doc.fillColor(tw.purple700).fontSize(9).font('Helvetica-Bold')
-               .text(`Room ${passengerRoom.roomNumber || pIdx+1}`, pBoxX + pBoxWidth - 80, pBoxStartY + 17, { width: 60, align: 'center' });
-
-            doc.moveTo(pBoxX + 10, pBoxStartY + 40).lineTo(pBoxX + pBoxWidth - 10, pBoxStartY + 40).strokeColor(tw.purple200).stroke();
-
-            let currentY = pBoxStartY + 55;
-
-            // Adults
-            if (passengerRoom.adults && passengerRoom.adults.length > 0) {
-               doc.fillColor(tw.textLight).fontSize(10).font('Helvetica-Bold')
-                  .text(`Adult Passengers (${passengerRoom.adults.length})`, pBoxX + 15, currentY);
-               currentY += 20;
-
-               // Grid for Adults
-               // 2 columns
-               for (let a = 0; a < passengerRoom.adults.length; a++) {
-                  // checkPageBreak(120); // Basic check inside loop
-                  const adult = passengerRoom.adults[a];
-                  const col = a % 2;
-                  const row = Math.floor(a / 2);
-                  const cardW = (pBoxWidth - 45) / 2;
-                  const cardH = 110;
-                  const cardX = pBoxX + 15 + (col * (cardW + 15));
-                  const cardY = currentY + (row * (cardH + 15));
-
-                  // Purple Card
-                  doc.roundedRect(cardX, cardY, cardW, cardH, 8).fillAndStroke(tw.purple50, tw.purple200);
-                  
-                  doc.fillColor(tw.purple600).fontSize(9).font('Helvetica-Bold').text(`Adult ${a + 1}`, cardX + 10, cardY + 10);
-                  
-                  let txtY = cardY + 28;
-                  const fields = [
-                     ['Name:', adult.name],
-                     ['Passport:', adult.passport],
-                     ['Country:', adult.country]
-                  ];
-                  
-                  fields.forEach(([l, v]) => {
-                     doc.fillColor(tw.textLight).fontSize(8).font('Helvetica').text(l, cardX + 10, txtY);
-                     doc.fillColor(tw.textDark).text(v || '-', cardX + 60, txtY);
-                     txtY += 12;
-                  });
-
-                  if (adult.arrivalFlightNumber) {
-                     txtY += 5;
-                     doc.fillColor(tw.green600).font('Helvetica-Bold').text('Arrival', cardX + 10, txtY);
-                     doc.fillColor(tw.textDark).font('Helvetica').text(`${adult.arrivalFlightNumber} @ ${adult.arrivalTime}`, cardX + 50, txtY);
-                  }
-
-                  // Update Y cursor
-                  if (col === 1 || a === passengerRoom.adults.length - 1) {
-                     // Next row
-                  }
-               }
-               const rows = Math.ceil(passengerRoom.adults.length / 2);
-               currentY += (rows * 125) + 10;
-            }
-
-            // Children
-            if (passengerRoom.children && passengerRoom.children.length > 0) {
-               doc.fillColor(tw.textLight).fontSize(10).font('Helvetica-Bold')
-                  .text(`Children Passengers (${passengerRoom.children.length})`, pBoxX + 15, currentY);
-               currentY += 20;
-
-               for (let c = 0; c < passengerRoom.children.length; c++) {
-                  const child = passengerRoom.children[c];
-                  const col = c % 2;
-                  const row = Math.floor(c / 2);
-                  const cardW = (pBoxWidth - 45) / 2;
-                  const cardH = 110;
-                  const cardX = pBoxX + 15 + (col * (cardW + 15));
-                  const cardY = currentY + (row * (cardH + 15));
-
-                  // Blue Card
-                  doc.roundedRect(cardX, cardY, cardW, cardH, 8).fillAndStroke(tw.blue50, tw.blue200);
-                  
-                  doc.fillColor(tw.blue600).fontSize(9).font('Helvetica-Bold').text(`Child ${c + 1}`, cardX + 10, cardY + 10);
-                  
-                  let txtY = cardY + 28;
-                  const fields = [
-                     ['Name:', child.name],
-                     ['Age:', child.age],
-                     ['Passport:', child.passport]
-                  ];
-                  
-                  fields.forEach(([l, v]) => {
-                     doc.fillColor(tw.textLight).fontSize(8).font('Helvetica').text(l, cardX + 10, txtY);
-                     doc.fillColor(tw.textDark).text(v || '-', cardX + 60, txtY);
-                     txtY += 12;
-                  });
-
-                  if (child.arrivalFlightNumber) {
-                     txtY += 5;
-                     doc.fillColor(tw.green600).font('Helvetica-Bold').text('Arrival', cardX + 10, txtY);
-                     doc.fillColor(tw.textDark).font('Helvetica').text(`${child.arrivalFlightNumber}`, cardX + 50, txtY);
-                  }
-               }
-               const rows = Math.ceil(passengerRoom.children.length / 2);
-               currentY += (rows * 125) + 10;
-            }
-
-            // Draw border box for the whole passenger section
-            doc.roundedRect(pBoxX, pBoxStartY, pBoxWidth, currentY - pBoxStartY, 12).stroke(tw.purple200);
-            
-            doc.y = currentY + 20;
-         }
-      }
 
 
       // --- INVESTMENT SUMMARY (Bottom) ---
@@ -1180,11 +1045,10 @@ export const generateReceiptPDF = async (receipt) => {
       doc.text(new Date(receipt.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), cols.date.x + 2, rowY);
       doc.text(receipt.receiptNumber, cols.rectNo.x + 2, rowY);
 
-      // Sourcing data: prefer invoice.finalAmount as the "created invoice price"
-      // prefer booking.bookingNumber as the "relevant booking id"
-      const bookingNumber = receipt.invoice?.booking?.bookingNumber || receipt.booking?.bookingNumber || '';
-      const bookingTotalAmount = receipt.invoice?.finalAmount || receipt.bookingTotal || 0;
-      const currentBookingBalance = receipt.invoice?.booking?.balance || receipt.remainingBalance || 0;
+      // Sourcing data: prefer lead values but fallback to snapshots
+      const bookingNumber = receipt.invoice?.booking?.bookingNumber || receipt.booking?.bookingNumber || receipt.lead?.booking?.bookingNumber || receipt.lead?.leadNumber || '';
+      const bookingTotalAmount = receipt.lead?.totalAmount || receipt.invoice?.finalAmount || receipt.bookingTotal || 0;
+      const currentBookingBalance = receipt.lead?.balance !== undefined ? receipt.lead.balance : (receipt.invoice?.booking?.balance || receipt.remainingBalance || 0);
       const currentPayment = receipt.finalAmount || 0;
       
       const remBalPre = currentBookingBalance + currentPayment;
@@ -1436,11 +1300,11 @@ export const generateVoucherPDF = async (booking) => {
       doc.font('Helvetica').text('Aslam', 460, footerY);
 
       // Logo Stamp
-      if (finalLogoPath) {
-        doc.image(finalLogoPath, 460, footerY + 20, { width: 60 });
-        doc.fontSize(8).font('Helvetica-Bold').text('CROWN VOYAGES', 460, footerY + 50);
-        doc.fontSize(6).font('Helvetica').text('PVT LOT | 02290234', 460, footerY + 60);
-      }
+      // if (finalLogoPath) {
+      //   doc.image(finalLogoPath, 460, footerY + 20, { width: 60 });
+      //   doc.fontSize(8).font('Helvetica-Bold').text('CROWN VOYAGES', 460, footerY + 50);
+      //   doc.fontSize(6).font('Helvetica').text('PVT LOT | 02290234', 460, footerY + 60);
+      // }
 
       doc.end();
     } catch (error) {
@@ -1471,7 +1335,7 @@ export const generateReportPDF = async (title, data, options = {}) => {
 
       // Header
       doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text('Luxury Travel Management', 40, 65);
+    
 
       // Report Title
       doc.moveDown(2);
