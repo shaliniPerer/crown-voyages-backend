@@ -33,6 +33,9 @@ const voucherSchema = new mongoose.Schema({
   checkOut: {
     type: Date
   },
+  phone: {
+    type: String
+  },
   status: {
     type: String,
     enum: ['Generated', 'Sent', 'Cancelled'],
@@ -47,15 +50,22 @@ const voucherSchema = new mongoose.Schema({
 // Auto-increment voucher number
 voucherSchema.pre('save', async function(next) {
   if (this.isNew && !this.voucherNumber) {
-    const lastVoucher = await mongoose.model('Voucher').findOne().sort({ createdAt: -1 });
-    let lastNumber = 0;
-    if (lastVoucher && lastVoucher.voucherNumber) {
-      const parsed = parseInt(lastVoucher.voucherNumber.replace('VCH-', ''));
-      if (!isNaN(parsed)) {
-        lastNumber = parsed;
+    try {
+      // Use this.constructor for a safer model reference inside pre-save hooks
+      const lastVoucher = await this.constructor.findOne().sort({ createdAt: -1 });
+      let lastNumber = 0;
+      if (lastVoucher && lastVoucher.voucherNumber) {
+        const parsed = parseInt(lastVoucher.voucherNumber.replace('VCH-', ''));
+        if (!isNaN(parsed)) {
+          lastNumber = parsed;
+        }
       }
+      this.voucherNumber = `VCH-${String(lastNumber + 1).padStart(6, '0')}`;
+    } catch (error) {
+      console.error('Voucher Number generation error:', error);
+      // Fallback to random number if the lookup fails to prevent blocking the save
+      this.voucherNumber = `VCH-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
     }
-    this.voucherNumber = `VCH-${String(lastNumber + 1).padStart(6, '0')}`;
   }
   next();
 });

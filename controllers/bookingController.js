@@ -1277,7 +1277,13 @@ export const sendInvoiceEmail = asyncHandler(async (req, res) => {
 // @route   POST /api/bookings/receipt/:id/send-email
 // @access  Private
 export const sendReceiptEmail = asyncHandler(async (req, res) => {
-  const receipt = await Receipt.findById(req.params.id).populate('lead');
+  const receipt = await Receipt.findById(req.params.id)
+    .populate({
+      path: 'invoice',
+      populate: { path: 'booking' }
+    })
+    .populate('booking')
+    .populate('lead');
 
   if (!receipt) {
     res.status(404);
@@ -1399,10 +1405,11 @@ export const exportInvoicePDF = asyncHandler(async (req, res) => {
 export const exportReceiptPDF = asyncHandler(async (req, res) => {
   const receipt = await Receipt.findById(req.params.id)
     .populate({
-      path: 'lead',
-      populate: { path: 'booking', select: 'bookingNumber' }
+      path: 'invoice',
+      populate: { path: 'booking' }
     })
-    .populate('invoice');
+    .populate('booking')
+    .populate('lead');
 
   if (!receipt) {
     res.status(404);
@@ -1447,20 +1454,42 @@ export const getVouchers = asyncHandler(async (req, res) => {
 // @route   POST /api/bookings/voucher
 // @access  Private
 export const createVoucher = asyncHandler(async (req, res) => {
-  const { lead, booking, customerName, email, resortName, roomName, checkIn, checkOut } = req.body;
+  const { lead, booking, customerName, email, phone, resortName, roomName, checkIn, checkOut } = req.body;
+
+  // Basic validation
+  if (!customerName || !email) {
+    res.status(400);
+    throw new Error('Customer name and email are required');
+  }
 
   try {
-    const voucher = await Voucher.create({
-      lead,
-      booking,
+    const voucherData = {
       customerName,
       email,
-      resortName,
-      roomName,
-      checkIn: checkIn ? new Date(checkIn) : undefined,
-      checkOut: checkOut ? new Date(checkOut) : undefined,
+      phone: phone || 'N/A',
+      resortName: resortName || 'N/A',
+      roomName: roomName || 'N/A',
       createdBy: req.user._id
-    });
+    };
+
+    // Robust ID clean up: only include if they look like a valid MongoDB ObjectId
+    const isValidObjectId = (id) => id && id.length === 24 && /^[0-9a-fA-F]{24}$/.test(id);
+
+    if (isValidObjectId(lead)) voucherData.lead = lead;
+    if (isValidObjectId(booking)) voucherData.booking = booking;
+
+    // Safely handle dates
+    if (checkIn && checkIn !== '') {
+      const dIn = new Date(checkIn);
+      if (!isNaN(dIn.getTime())) voucherData.checkIn = dIn;
+    }
+    
+    if (checkOut && checkOut !== '') {
+      const dOut = new Date(checkOut);
+      if (!isNaN(dOut.getTime())) voucherData.checkOut = dOut;
+    }
+
+    const voucher = await Voucher.create(voucherData);
 
     await ActivityLog.create({
       user: req.user._id,
@@ -1475,10 +1504,20 @@ export const createVoucher = asyncHandler(async (req, res) => {
       data: voucher
     });
   } catch (error) {
-    console.error('Error creating voucher:', error);
+    console.error('SERVER ERROR (Voucher Creation):', error);
+    
+    let message = 'Voucher creation failed';
+    if (error.name === 'ValidationError') {
+      message = Object.values(error.errors).map(val => val.message).join(', ');
+    } else if (error.code === 11000) {
+      message = 'Duplicate voucher number generated. Please try again.';
+    } else {
+      message = error.message;
+    }
+
     res.status(400).json({
       success: false,
-      message: error.message || 'Voucher creation failed'
+      message: message
     });
   }
 });
@@ -1487,40 +1526,80 @@ export const createVoucher = asyncHandler(async (req, res) => {
 // @route   GET /api/bookings/voucher/:id/pdf
 // @access  Private
 export const exportVoucherPDF = asyncHandler(async (req, res) => {
-  // First try to find as a Lead
-  let booking = await Lead.findById(req.params.id)
-    .populate('resort', 'name location images description')
-    .populate('room', 'roomName roomType images description size bedType')
-    .populate('booking', 'bookingNumber');
+  // First try to find as a Voucher directly
+  let booking = await Voucher.findById(req.params.id)
+    .populate({
+      path: 'lead',
+      populate: [
+        { path: 'resort' },
+        { path: 'room' }
+      ]
+    })
+    .populate({
+      path: 'booking',
+      populate: [
+        { path: 'resort' },
+        { path: 'room' }
+      ]
+    });
 
-  // If not found as lead, try as a Booking
+  // Fallback: Lead
+  if (!booking) {
+    booking = await Lead.findById(req.params.id)
+      .populate('resort', 'name location images description')
+      .populate('room', 'roomName roomType images description size bedType')
+      .populate('booking', 'bookingNumber');
+  }
+
+  // Fallback: Booking
   if (!booking) {
     booking = await Booking.findById(req.params.id)
       .populate('resort', 'name location images description')
       .populate('room', 'roomName roomType images description size bedType');
   }
 
-  // If not found, try as a Voucher
-  if (!booking) {
-    booking = await Voucher.findById(req.params.id)
-      .populate('resort', 'name location images description')
-      .populate('room', 'roomName roomType images description size bedType');
-    
-    // Normalize voucher fields for PDF generator if needed
-    if (booking) {
-      booking = booking.toObject();
-    }
-  }
-
   if (!booking) {
     res.status(404);
-    throw new Error('Booking, Lead or Voucher not found');
+    throw new Error('Voucher, Lead or Booking not found');
   }
 
-  const pdfBuffer = await generateVoucherPDF(booking);
+  // Normalize for PDF generator
+  let pdfData = booking.toObject ? booking.toObject() : booking;
+
+  // If it's a Voucher document or any document from a voucher creation flow
+  if (pdfData.customerName) {
+    const sourceData = pdfData.lead || pdfData.booking || {};
+    pdfData = {
+      ...pdfData,
+      guestName: pdfData.customerName || sourceData.guestName,
+      phone: pdfData.phone || sourceData.phone || 'N/A',
+      resort: { 
+        name: pdfData.resortName || (sourceData.resort && sourceData.resort.name) || sourceData.resortName || 'N/A',
+        location: (sourceData.resort && sourceData.resort.location) || 'N/A'
+      },
+      room: { 
+        roomName: pdfData.roomName || (sourceData.room && sourceData.room.roomName) || sourceData.roomName || 'N/A',
+        roomType: (sourceData.room && sourceData.room.roomType) || 'N/A'
+      },
+      bookingNumber: pdfData.voucherNumber || sourceData.bookingNumber || sourceData.leadNumber || 'N/A',
+      checkIn: pdfData.checkIn || sourceData.checkIn,
+      checkOut: pdfData.checkOut || sourceData.checkOut,
+      adults: sourceData.adults || pdfData.adults || 0,
+      children: sourceData.children || pdfData.children || 0,
+      rooms: sourceData.rooms || pdfData.rooms || 1,
+      mealPlan: sourceData.mealPlan || pdfData.mealPlan || 'N/A',
+      passengerDetails: sourceData.passengerDetails || [],
+      nationality: sourceData.nationality || 'N/A',
+      specialRequests: sourceData.specialRequests || pdfData.specialRequests || 'N/A',
+      resortRefNumber: sourceData.resortRefNumber || '',
+      ourRefNumber: sourceData.ourRefNumber || sourceData.bookingNumber || sourceData.leadNumber || '',
+    };
+  }
+
+  const pdfBuffer = await generateVoucherPDF(pdfData);
 
   res.setHeader('Content-Type', 'application/pdf');
-  const filename = booking.bookingNumber || booking.leadNumber || 'voucher';
+  const filename = pdfData.voucherNumber || pdfData.bookingNumber || pdfData.leadNumber || 'voucher';
   res.setHeader('Content-Disposition', `attachment; filename=voucher-${filename}.pdf`);
   res.send(pdfBuffer);
 });
@@ -1529,47 +1608,88 @@ export const exportVoucherPDF = asyncHandler(async (req, res) => {
 // @route   POST /api/bookings/voucher/:id/send
 // @access  Private
 export const sendVoucherEmail = asyncHandler(async (req, res) => {
-  // First try to find as a Lead
-  let booking = await Lead.findById(req.params.id)
-    .populate('resort', 'name location images description')
-    .populate('room', 'roomName roomType images description size bedType')
-    .populate('booking', 'bookingNumber');
+  // First try to find as a Voucher directly (standard case)
+  let booking = await Voucher.findById(req.params.id)
+    .populate({
+      path: 'lead',
+      populate: [
+        { path: 'resort' },
+        { path: 'room' }
+      ]
+    })
+    .populate({
+      path: 'booking',
+      populate: [
+        { path: 'resort' },
+        { path: 'room' }
+      ]
+    });
 
-  // If not found as lead, try as a Booking
+  // Fallback: search as Lead
+  if (!booking) {
+    booking = await Lead.findById(req.params.id)
+      .populate('resort', 'name location images description')
+      .populate('room', 'roomName roomType images description size bedType')
+      .populate('booking', 'bookingNumber');
+  }
+
+  // Fallback: search as Booking
   if (!booking) {
     booking = await Booking.findById(req.params.id)
       .populate('resort', 'name location images description')
       .populate('room', 'roomName roomType images description size bedType');
   }
 
-  // If not found, try as a Voucher
-  if (!booking) {
-    booking = await Voucher.findById(req.params.id)
-      .populate('resort', 'name location images description')
-      .populate('room', 'roomName roomType images description size bedType');
-    
-    // Normalize voucher fields for PDF generator if needed
-    if (booking) {
-      booking = booking.toObject();
-    }
-  }
-
   if (!booking) {
     res.status(404);
-    throw new Error('Booking, Lead or Voucher not found');
+    throw new Error('Voucher, Lead or Booking not found');
   }
 
-  const pdfBuffer = await generateVoucherPDF(booking);
-  const emailHtml = voucherEmailTemplate(booking);
-  const voucherName = booking.bookingNumber || booking.leadNumber || 'Reference';
+  // Normalize for PDF generator
+  let pdfData = booking.toObject ? booking.toObject() : booking;
+
+  // If we found a Voucher or related document, normalize it for the PDF generator
+  if (pdfData.customerName) {
+    const sourceData = pdfData.lead || pdfData.booking || {};
+    pdfData = {
+      ...pdfData,
+      guestName: pdfData.customerName || sourceData.guestName,
+      phone: pdfData.phone || sourceData.phone || 'N/A',
+      resort: { 
+        name: pdfData.resortName || (sourceData.resort && sourceData.resort.name) || sourceData.resortName || 'N/A',
+        location: (sourceData.resort && sourceData.resort.location) || 'N/A'
+      },
+      room: { 
+        roomName: pdfData.roomName || (sourceData.room && sourceData.room.roomName) || sourceData.roomName || 'N/A',
+        roomType: (sourceData.room && sourceData.room.roomType) || 'N/A'
+      },
+      bookingNumber: pdfData.voucherNumber || sourceData.bookingNumber || sourceData.leadNumber || 'N/A',
+      checkIn: pdfData.checkIn || sourceData.checkIn,
+      checkOut: pdfData.checkOut || sourceData.checkOut,
+      adults: sourceData.adults || pdfData.adults || 0,
+      children: sourceData.children || pdfData.children || 0,
+      rooms: sourceData.rooms || pdfData.rooms || 1,
+      mealPlan: sourceData.mealPlan || pdfData.mealPlan || 'N/A',
+      passengerDetails: sourceData.passengerDetails || [],
+      savedBookings: sourceData.savedBookings || [],
+      nationality: sourceData.nationality || 'N/A',
+      specialRequests: sourceData.specialRequests || pdfData.specialRequests || 'N/A',
+      resortRefNumber: sourceData.resortRefNumber || '',
+      ourRefNumber: sourceData.ourRefNumber || sourceData.bookingNumber || sourceData.leadNumber || '',
+    };
+  }
+
+  const pdfBuffer = await generateVoucherPDF(pdfData);
+  const emailHtml = voucherEmailTemplate(pdfData);
+  const identifier = pdfData.voucherNumber || pdfData.bookingNumber || pdfData.leadNumber || 'REF';
 
   await sendEmail({
-    to: booking.email,
-    subject: `Your Booking Voucher - VCH-${voucherName} (Confirmed)`,
+    to: pdfData.email,
+    subject: `Your Booking Voucher - ${identifier} (Confirmed)`,
     html: emailHtml,
     attachments: [
       {
-        filename: `voucher-${voucherName}.pdf`,
+        filename: `voucher-${identifier}.pdf`,
         content: pdfBuffer,
         contentType: 'application/pdf'
       }

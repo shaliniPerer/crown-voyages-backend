@@ -1,79 +1,325 @@
-// Booking Voucher Email Template
+// Booking Voucher Email Template - Professional Design
 export const voucherEmailTemplate = (booking) => {
   const resortName = booking.resort?.name || 'Your Resort';
   const roomName = booking.room?.roomName || booking.room?.roomType || 'Your Room';
-  const checkIn = new Date(booking.checkIn).toLocaleDateString();
-  const checkOut = new Date(booking.checkOut).toLocaleDateString();
-  const bookingNumber = booking.bookingNumber || booking.leadNumber;
+  const checkIn = new Date(booking.checkIn).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const checkOut = new Date(booking.checkOut).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const bookingNumber = booking.bookingNumber || booking.voucherNumber || booking.leadNumber;
 
   return `
     <!DOCTYPE html>
     <html>
     <head>
       <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #166534; color: #ffffff; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-        .content { background: #f9f9f9; padding: 30px; border: 1px solid #e5e7eb; border-top: none; }
-        .voucher-card { background: white; padding: 25px; margin: 20px 0; border: 1px dashed #166534; border-radius: 8px; }
-        .badge { display: inline-block; padding: 4px 12px; background: #dcfce7; color: #166534; border-radius: 9999px; font-weight: bold; font-size: 12px; margin-bottom: 20px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
-        .resort-info { background: #eff6ff; padding: 15px; border-radius: 6px; margin-top: 20px; }
-        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+        body { 
+          font-family: Arial, sans-serif; 
+          line-height: 1.4; 
+          color: #000; 
+          margin: 0;
+          padding: 0;
+        }
+        .container { 
+          max-width: 800px; 
+          margin: 0 auto; 
+          padding: 20px;
+          background: #fff;
+        }
+        .header { 
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 20px 0;
+          border-bottom: 2px solid #000;
+          margin-bottom: 30px;
+        }
+        .company-info {
+          flex: 1;
+        }
+        .company-logo {
+          width: 150px;
+          height: auto;
+          margin-bottom: 10px;
+        }
+        .company-info p {
+          margin: 2px 0;
+          font-size: 11px;
+          line-height: 1.4;
+        }
+        .voucher-title {
+          text-align: right;
+          flex: 0 0 auto;
+        }
+        .voucher-title h1 {
+          font-size: 32px;
+          font-weight: bold;
+          margin: 0;
+          color: #000;
+        }
+        .voucher-details {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 20px;
+          margin: 20px 0 30px 0;
+          padding: 15px;
+          background: #f9f9f9;
+          border: 1px solid #ccc;
+        }
+        .detail-item {
+          display: flex;
+          flex-direction: column;
+        }
+        .detail-label {
+          font-size: 10px;
+          color: #666;
+          margin-bottom: 3px;
+        }
+        .detail-value {
+          font-size: 11px;
+          font-weight: bold;
+          color: #000;
+        }
+        .info-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 30px;
+          margin: 20px 0;
+        }
+        .info-section h3 {
+          font-size: 12px;
+          font-weight: bold;
+          margin: 0 0 15px 0;
+          padding-bottom: 8px;
+          border-bottom: 1px solid #ccc;
+        }
+        .info-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 6px 0;
+          font-size: 11px;
+        }
+        .info-label {
+          color: #666;
+        }
+        .info-value {
+          font-weight: bold;
+          text-align: right;
+        }
+        .guest-list {
+          margin: 15px 0;
+        }
+        .guest-list p {
+          margin: 4px 0;
+          font-size: 11px;
+        }
+        .special-section {
+          margin-top: 30px;
+          padding: 15px;
+          background: #fffbeb;
+          border-left: 4px solid #f59e0b;
+        }
+        .special-section h4 {
+          margin: 0 0 10px 0;
+          font-size: 12px;
+          color: #92400e;
+        }
+        .special-section p {
+          margin: 5px 0;
+          font-size: 11px;
+          color: #78350f;
+        }
+        .authorization {
+          margin-top: 40px;
+          padding-top: 20px;
+          border-top: 1px solid #ccc;
+          text-align: right;
+        }
+        .authorization p {
+          margin: 3px 0;
+          font-size: 11px;
+        }
+        .footer {
+          margin-top: 40px;
+          padding-top: 20px;
+          border-top: 2px solid #000;
+          text-align: center;
+        }
+        .footer p {
+          margin: 3px 0;
+          font-size: 10px;
+          color: #666;
+        }
       </style>
     </head>
     <body>
       <div class="container">
+        <!-- Header with Logo and Voucher Title -->
         <div class="header">
-          <h2 style="margin:0; text-transform: uppercase; letter-spacing: 2px;">CROWN VOYAGES</h2>
-          <p style="margin:5px 0 0 0; opacity: 0.9;">Luxury Travel Management</p>
-        </div>
-        <div class="content">
-          <p>Dear ${booking.guestName},</p>
-          <p>We are delighted to confirm your luxury getaway. Your booking is now fully confirmed and processed.</p>
-          
-          <div class="voucher-card">
-            <div class="badge">BOOKING CONFIRMED</div>
-            <h3 style="margin: 0 0 10px 0; color: #111827;">Your Booking Voucher</h3>
-            <p style="margin: 0; font-size: 14px; color: #6b7280;">Voucher Number: VCH-${bookingNumber}</p>
-            
-            <div class="resort-info">
-              <h4 style="margin: 0; color: #1e3a8a;">${resortName}</h4>
-              <p style="margin: 5px 0 0 0; font-size: 14px;">${roomName}</p>
-            </div>
-
-            <table style="width: 100%; margin-top: 20px; font-size: 14px; border-top: 1px solid #eee; padding-top: 15px;">
-              <tr>
-                <td style="padding: 10px 0;"><strong>Check-in:</strong></td>
-                <td style="padding: 10px 0; text-align: right;">${checkIn}</td>
-              </tr>
-              <tr>
-                <td style="padding: 10px 0;"><strong>Check-out:</strong></td>
-                <td style="padding: 10px 0; text-align: right;">${checkOut}</td>
-              </tr>
-              <tr>
-                <td style="padding: 10px 0;"><strong>Guests:</strong></td>
-                <td style="padding: 10px 0; text-align: right;">${booking.adults} Adults, ${booking.children || 0} Children</td>
-              </tr>
-              <tr>
-                <td style="padding: 10px 0;"><strong>Meal Plan:</strong></td>
-                <td style="padding: 10px 0; text-align: right;">${booking.mealPlan || 'Standard'}</td>
-              </tr>
-            </table>
-
-            <p style="margin-top: 20px; font-size: 12px; color: #666;">
-              Please present this voucher upon arrival at the resort along with a valid photo ID.
-            </p>
+          <div class="company-info">
+            <!-- Replace this image src with your actual logo -->
+            <img src="YOUR_LOGO_URL_HERE" alt="Company Logo" class="company-logo">
+            <p>Lot 20329 | Nirolhu magu Hulhumale</p>
+            <p>Male', Republic of Maldives</p>
+            <p>Email: hello@yourdomain.com</p>
+            <p>Website: www.yourdomain.com</p>
+            <p>Phone: (XXX) XXX-XXXX</p>
+            <p>Phone: (XXX) XXX-XXXX</p>
           </div>
-          
-          <p>We have attached your official booking voucher to this email for your records.</p>
-          <p>If you have any questions or require special assistance, please do not hesitate to contact our concierge team.</p>
-          
-          <p>Warm regards,<br>The Crown Voyages Team</p>
+          <div class="voucher-title">
+            <h1>HOTEL VOUCHER</h1>
+          </div>
         </div>
+
+        <!-- Voucher Details Grid -->
+        <div class="voucher-details">
+          <div class="detail-item">
+            <span class="detail-label">Voucher No:</span>
+            <span class="detail-value">${bookingNumber}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Booking Date:</span>
+            <span class="detail-value">${new Date(booking.bookingDate || booking.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Issuing Date:</span>
+            <span class="detail-value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          </div>
+        </div>
+
+        <!-- Main Information Grid -->
+        <div class="info-grid">
+          <!-- Left Column -->
+          <div class="info-section">
+            <h3>HOTEL INFORMATION</h3>
+            <div class="info-row">
+              <span class="info-label">Name of the Resort/Hotel:</span>
+            </div>
+            <div class="info-row">
+              <span class="info-value" style="font-size: 13px;">${resortName}</span>
+            </div>
+            ${booking.resortRefNumber ? `
+            <div class="info-row" style="margin-top: 10px;">
+              <span class="info-label">Resort Ref No:</span>
+              <span class="info-value">${booking.resortRefNumber}</span>
+            </div>
+            ` : ''}
+            ${booking.ourRefNumber ? `
+            <div class="info-row">
+              <span class="info-label">Our Ref No:</span>
+              <span class="info-value">${booking.ourRefNumber}</span>
+            </div>
+            ` : ''}
+          </div>
+
+          <!-- Right Column -->
+          <div class="info-section">
+            <h3>BOOKING DETAILS</h3>
+            <div class="info-row">
+              <span class="info-label">No of Pax:</span>
+              <span class="info-value">${booking.adults} Adults${booking.children ? ` & ${booking.children} Children` : ''}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">No of Rooms:</span>
+              <span class="info-value">${booking.numberOfRooms || 1}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">No of Nights:</span>
+              <span class="info-value">${booking.numberOfNights || Math.ceil((new Date(booking.checkOut) - new Date(booking.checkIn)) / (1000 * 60 * 60 * 24))}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Meal Plan:</span>
+              <span class="info-value">${booking.mealPlan || 'As per booking'}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Guest Information -->
+        <div class="info-section">
+          <h3>GUEST INFORMATION</h3>
+          <div class="info-row">
+            <span class="info-label">Name of Guest/Group:</span>
+            <span class="info-value">${booking.guestName || booking.customerName}</span>
+          </div>
+          ${booking.guests && booking.guests.length > 0 ? `
+          <div class="guest-list">
+            ${booking.guests.map(guest => `<p>${guest}</p>`).join('')}
+          </div>
+          ` : ''}
+          ${booking.nationality ? `
+          <div class="info-row" style="margin-top: 10px;">
+            <span class="info-label">Nationality:</span>
+            <span class="info-value">${booking.nationality}</span>
+          </div>
+          ` : ''}
+        </div>
+
+        <!-- Room and Transfer Information -->
+        <div class="info-grid" style="margin-top: 30px;">
+          <div class="info-section">
+            <h3>ACCOMMODATION</h3>
+            <div class="info-row">
+              <span class="info-label">Room Type:</span>
+              <span class="info-value">${roomName}</span>
+            </div>
+            ${booking.transferDetails ? `
+            <div class="info-row" style="margin-top: 10px;">
+              <span class="info-label">Transfer:</span>
+            </div>
+            <div class="info-row">
+              <span class="info-value" style="font-size: 10px;">${booking.transferDetails}</span>
+            </div>
+            ` : ''}
+          </div>
+
+          <div class="info-section">
+            <h3>TRAVEL DATES</h3>
+            <div class="info-row">
+              <span class="info-label">Arrival Date:</span>
+              <span class="info-value">${checkIn}</span>
+            </div>
+            ${booking.arrivalFlight ? `
+            <div class="info-row">
+              <span class="info-label">Flight Details:</span>
+              <span class="info-value">${booking.arrivalFlight}</span>
+            </div>
+            ` : ''}
+            <div class="info-row" style="margin-top: 10px;">
+              <span class="info-label">Departure Date:</span>
+              <span class="info-value">${checkOut}</span>
+            </div>
+            ${booking.departureFlight ? `
+            <div class="info-row">
+              <span class="info-label">Flight Details:</span>
+              <span class="info-value">${booking.departureFlight}</span>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+
+        <!-- Special Requests and Remarks -->
+        ${booking.specialRequest || booking.remarks ? `
+        <div class="special-section">
+          ${booking.specialRequest ? `
+          <h4>Special Request:</h4>
+          <p>${booking.specialRequest}</p>
+          ` : ''}
+          ${booking.remarks ? `
+          <h4>Remarks:</h4>
+          <p>${booking.remarks}</p>
+          ` : ''}
+        </div>
+        ` : ''}
+
+        <!-- Authorization -->
+        <div class="authorization">
+          <p><strong>Authorized By:</strong> ${booking.authorizedBy || 'Reservations Department'}</p>
+          <p style="margin-top: 10px; font-size: 10px; color: #666;">Date: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()}</p>
+        </div>
+
+        <!-- Footer -->
         <div class="footer">
-          <p>123 Luxury Ave, Suite 100, New York, NY 10001</p>
-          <p>© ${new Date().getFullYear()} Crown Voyages. All rights reserved.</p>
+          <p><strong>Please present this voucher upon arrival at the resort</strong></p>
+          <p>This is a computer-generated voucher and requires no signature</p>
+          <p style="margin-top: 10px;">© ${new Date().getFullYear()} Resort Luxury Management. All rights reserved.</p>
         </div>
       </div>
     </body>
@@ -479,61 +725,286 @@ export const invoiceEmailTemplate = (invoice) => {
     </html>
   `;
 };
-// Payment Receipt Template
+// Payment Receipt Template - Professional Design
 export const paymentReceiptTemplate = (payment, invoice) => {
   return `
     <!DOCTYPE html>
     <html>
     <head>
       <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white; padding: 30px; text-align: center; }
-        .content { background: #f9f9f9; padding: 30px; }
-        .receipt-box { background: white; padding: 20px; margin: 20px 0; border: 2px solid #10B981; }
-        .amount { font-size: 36px; font-weight: bold; color: #10B981; text-align: center; margin: 20px 0; }
-        .details { margin: 20px 0; }
-        .details div { padding: 8px 0; border-bottom: 1px solid #e5e5e5; }
-        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+        body { 
+          font-family: Arial, sans-serif; 
+          line-height: 1.4; 
+          color: #000; 
+          margin: 0;
+          padding: 0;
+        }
+        .container { 
+          max-width: 800px; 
+          margin: 0 auto; 
+          padding: 20px;
+          background: #fff;
+        }
+        .header { 
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 20px 0;
+          border-bottom: 2px solid #000;
+          margin-bottom: 30px;
+        }
+        .company-info {
+          flex: 1;
+        }
+        .company-logo {
+          width: 150px;
+          height: auto;
+          margin-bottom: 10px;
+        }
+        .company-info p {
+          margin: 2px 0;
+          font-size: 11px;
+          line-height: 1.4;
+        }
+        .receipt-title {
+          text-align: right;
+          flex: 0 0 auto;
+        }
+        .receipt-title h1 {
+          font-size: 32px;
+          font-weight: bold;
+          margin: 0;
+          color: #000;
+        }
+        .customer-section {
+          margin-bottom: 30px;
+        }
+        .customer-section h3 {
+          font-size: 12px;
+          margin: 0 0 10px 0;
+          font-weight: bold;
+        }
+        .customer-section p {
+          margin: 3px 0;
+          font-size: 11px;
+        }
+        .receipt-details {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 20px;
+          margin: 30px 0;
+          padding: 20px;
+          background: #f9f9f9;
+          border: 1px solid #ccc;
+        }
+        .detail-item {
+          display: flex;
+          flex-direction: column;
+        }
+        .detail-label {
+          font-size: 10px;
+          color: #666;
+          margin-bottom: 3px;
+        }
+        .detail-value {
+          font-size: 12px;
+          font-weight: bold;
+          color: #000;
+        }
+        .table { 
+          width: 100%; 
+          border-collapse: collapse; 
+          margin: 20px 0;
+          font-size: 11px;
+        }
+        .table th { 
+          background: #f0f0f0;
+          color: #000;
+          padding: 10px;
+          text-align: left;
+          font-weight: bold;
+          border: 1px solid #ccc;
+        }
+        .table td { 
+          padding: 10px;
+          border: 1px solid #ccc;
+        }
+        .table th:last-child,
+        .table td:last-child {
+          text-align: right;
+        }
+        .summary-section {
+          margin-top: 30px;
+          display: flex;
+          justify-content: flex-end;
+        }
+        .summary-box {
+          width: 400px;
+          border: 2px solid #000;
+          padding: 20px;
+        }
+        .summary-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 8px 0;
+          font-size: 12px;
+        }
+        .summary-row.highlight {
+          background: #f0f0f0;
+          margin: 0 -20px;
+          padding: 8px 20px;
+        }
+        .summary-row.total {
+          border-top: 2px solid #000;
+          margin-top: 10px;
+          padding-top: 10px;
+          font-weight: bold;
+          font-size: 14px;
+        }
+        .amount-paid {
+          color: #10B981;
+          font-weight: bold;
+        }
+        .balance-due {
+          color: #EF4444;
+          font-weight: bold;
+        }
+        .footer {
+          margin-top: 40px;
+          padding-top: 20px;
+          border-top: 1px solid #ccc;
+          text-align: center;
+        }
+        .footer p {
+          margin: 3px 0;
+          font-size: 10px;
+        }
+        .watermark {
+          text-align: center;
+          margin: 30px 0;
+          padding: 20px;
+          border: 3px solid #10B981;
+          background: #f0fdf4;
+        }
+        .watermark h2 {
+          color: #10B981;
+          font-size: 24px;
+          margin: 0;
+        }
       </style>
     </head>
     <body>
       <div class="container">
+        <!-- Header with Logo and Receipt Title -->
         <div class="header">
-          <h1>✓ Payment Received</h1>
-          <p>Receipt #${payment.paymentId}</p>
+          <div class="company-info">
+            <!-- Replace this image src with your actual logo -->
+            <img src="YOUR_LOGO_URL_HERE" alt="Company Logo" class="company-logo">
+            <p>Email: accounts@yourdomain.com</p>
+            <p>Website: www.yourdomain.com</p>
+            <p>Phone: (XXX) XXX-XXXX</p>
+            <p>Phone: (XXX) XXX-XXXX</p>
+          </div>
+          <div class="receipt-title">
+            <h1>PAYMENT RECEIPT</h1>
+          </div>
         </div>
-        <div class="content">
-          <p>Dear ${invoice.customerName},</p>
-          <p>Thank you for your payment! This receipt confirms we have received your payment.</p>
-          
-          <div class="amount">$${payment.amount.toFixed(2)}</div>
-          
-          <div class="receipt-box">
-            <h3>Payment Details</h3>
-            <div class="details">
-              <div><strong>Payment Date:</strong> ${new Date(payment.date).toLocaleDateString()}</div>
-              <div><strong>Payment Method:</strong> ${payment.method}</div>
-              ${payment.transactionId ? `<div><strong>Transaction ID:</strong> ${payment.transactionId}</div>` : ''}
-              <div><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</div>
-              <div><strong>Amount Paid:</strong> $${payment.amount.toFixed(2)}</div>
+
+        <!-- Customer Section -->
+        <div class="customer-section">
+          <h3>Payment Received From:</h3>
+          <p><strong>${invoice.customerName}</strong></p>
+          <p>Invoice Reference: ${invoice.invoiceNumber}</p>
+        </div>
+
+        <!-- Receipt Details Grid -->
+        <div class="receipt-details">
+          <div class="detail-item">
+            <span class="detail-label">Ref No:</span>
+            <span class="detail-value">${payment.paymentId || payment.referenceNumber || 'N/A'}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Payment Date:</span>
+            <span class="detail-value">${new Date(payment.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Currency:</span>
+            <span class="detail-value">${payment.currency || 'USD'}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Payment Type:</span>
+            <span class="detail-value">${payment.method || 'Bank Transfer'}</span>
+          </div>
+          ${payment.transactionId ? `
+          <div class="detail-item">
+            <span class="detail-label">Transaction ID:</span>
+            <span class="detail-value">${payment.transactionId}</span>
+          </div>
+          ` : ''}
+        </div>
+
+        <!-- Payment Confirmation Watermark -->
+        <div class="watermark">
+          <h2>✓ PAYMENT RECEIVED</h2>
+        </div>
+
+        <!-- Payment Summary Table -->
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Invoice Date</th>
+              <th>Invoice No</th>
+              <th>Payment Reference</th>
+              <th>Invoice Total</th>
+              <th>Amount Paid</th>
+              <th>Still Owing</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${new Date(invoice.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+              <td>${invoice.invoiceNumber}</td>
+              <td>${payment.paymentId || payment.referenceNumber || '-'}</td>
+              <td>${payment.currency || 'USD'} ${invoice.finalAmount.toFixed(2)}</td>
+              <td class="amount-paid">${payment.currency || 'USD'} ${payment.amount.toFixed(2)}</td>
+              <td class="${invoice.balance > 0 ? 'balance-due' : 'amount-paid'}">${payment.currency || 'USD'} ${invoice.balance.toFixed(2)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Summary Box -->
+        <div class="summary-section">
+          <div class="summary-box">
+            <div class="summary-row">
+              <span>Invoice Total:</span>
+              <span>${payment.currency || 'USD'} ${invoice.finalAmount.toFixed(2)}</span>
             </div>
-            
-            <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #10B981;">
-              <div><strong>Invoice Total:</strong> $${invoice.finalAmount.toFixed(2)}</div>
-              <div><strong>Total Paid:</strong> $${invoice.paidAmount.toFixed(2)}</div>
-              <div style="font-size: 18px; color: ${invoice.balance > 0 ? '#EF4444' : '#10B981'};"><strong>Remaining Balance:</strong> $${invoice.balance.toFixed(2)}</div>
+            <div class="summary-row highlight">
+              <span>Previous Payments:</span>
+              <span>${payment.currency || 'USD'} ${((invoice.paidAmount || 0) - payment.amount).toFixed(2)}</span>
+            </div>
+            <div class="summary-row">
+              <span>Current Payment:</span>
+              <span class="amount-paid">${payment.currency || 'USD'} ${payment.amount.toFixed(2)}</span>
+            </div>
+            <div class="summary-row total">
+              <span>Balance Due:</span>
+              <span class="${invoice.balance > 0 ? 'balance-due' : 'amount-paid'}">${payment.currency || 'USD'} ${invoice.balance.toFixed(2)}</span>
             </div>
           </div>
-          
-          ${payment.notes ? `<p><strong>Notes:</strong> ${payment.notes}</p>` : ''}
-          
-          <p>Please keep this receipt for your records.</p>
-          <p>Thank you for your business!</p>
         </div>
+
+        ${payment.notes ? `
+        <div style="margin-top: 30px; padding: 15px; background: #f9f9f9; border-left: 4px solid #10B981;">
+          <p style="margin: 0; font-size: 11px;"><strong>Notes:</strong> ${payment.notes}</p>
+        </div>
+        ` : ''}
+
+        <!-- Footer -->
         <div class="footer">
-          <p>Resort Luxury Management System</p>
-          <p>© ${new Date().getFullYear()} All rights reserved</p>
+          <p><strong>Thank you for your payment!</strong></p>
+          <p>Please keep this receipt for your records.</p>
+          <p style="margin-top: 10px;">© ${new Date().getFullYear()} Resort Luxury Management System. All rights reserved.</p>
         </div>
       </div>
     </body>

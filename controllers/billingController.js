@@ -104,7 +104,7 @@ export const getInvoices = asyncHandler(async (req, res) => {
   }
 
   const invoices = await Invoice.find(query)
-    .populate('booking', 'bookingNumber guestName')
+    .populate('booking', 'bookingNumber guestName totalAmount paidAmount balance')
     .populate('lead')
     .populate('createdBy', 'name')
     .sort({ createdAt: -1 });
@@ -396,7 +396,11 @@ export const getBillingHistory = asyncHandler(async (req, res) => {
 // @access  Private
 export const sendPaymentReceiptEmail = asyncHandler(async (req, res) => {
   const payment = await Payment.findById(req.params.id)
-    .populate('invoice')
+    .populate({
+      path: 'invoice',
+      populate: { path: 'booking' }
+    })
+    .populate('booking')
     .populate('lead');
 
   if (!payment) {
@@ -405,6 +409,7 @@ export const sendPaymentReceiptEmail = asyncHandler(async (req, res) => {
   }
 
   const invoice = payment.invoice;
+  const booking = payment.booking || invoice?.booking;
   
   // Generate PDF
   const pdfBuffer = await generatePaymentReceiptPDF(payment, invoice);
@@ -635,6 +640,8 @@ export const recordPayment = asyncHandler(async (req, res) => {
       amount: amount, // The single payment amount
       discountValue: 0,
       finalAmount: amount,
+      bookingTotal: sourceInvoice.finalAmount || 0,
+      remainingBalance: sourceInvoice.balance || 0,
       paymentMethod: method,
       notes: notes || `Partial payment for Invoice ${sourceInvoice.invoiceNumber}`,
       createdBy: req.user._id,

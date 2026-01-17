@@ -1,5 +1,7 @@
 import PDFDocument from 'pdfkit';
 import axios from 'axios';
+import path from 'path';
+import fs from 'fs';
 
 // Generate Quotation PDF with comprehensive booking details
 export const generateQuotationPDF = async (quotation) => {
@@ -79,7 +81,25 @@ export const generateQuotationPDF = async (quotation) => {
       };
 
       // --- HEADER ---
-      doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
+      try {
+        const logoPaths = [
+          path.join(process.cwd(), 'client', 'src', 'assets', 'report_logo.png'),
+          path.join(process.cwd(), '..', 'client', 'src', 'assets', 'report_logo.png'),
+          path.join(process.cwd(), 'server', 'uploads', 'logo.png'),
+          path.join(process.cwd(), 'uploads', 'logo.png')
+        ];
+        let logoPath = null;
+        for (const p of logoPaths) {
+          if (fs.existsSync(p)) { logoPath = p; break; }
+        }
+        if (logoPath) {
+          doc.image(logoPath, 40, 30, { width: 140 });
+        } else {
+          doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
+        }
+      } catch (e) {
+        doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
+      }
       doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text('Luxury Travel Management', 40, 65);
 
       const headerRightX = 350;
@@ -638,179 +658,264 @@ export const generateInvoicePDF = async (invoice) => {
       };
 
       // --- HEADER ---
-      doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text('Luxury Travel Management', 40, 65);
+      // Adding Logo on the left
+      try {
+        const logoPaths = [
+          path.join(process.cwd(), 'client', 'src', 'assets', 'report_logo.png'),
+          path.join(process.cwd(), '..', 'client', 'src', 'assets', 'report_logo.png'),
+          path.join(process.cwd(), 'server', 'uploads', 'logo.png'),
+          path.join(process.cwd(), 'uploads', 'logo.png'),
+          path.join(process.cwd(), 'src/assets/report_logo.png')
+        ];
+        
+        let logoPath = null;
+        for (const p of logoPaths) {
+          if (fs.existsSync(p)) {
+            logoPath = p;
+            break;
+          }
+        }
 
+        if (logoPath) {
+          doc.image(logoPath, 40, 30, { width: 100 });
+        } else {
+          console.log('Invoice Logo not found in possible paths');
+        }
+      } catch (e) {
+        console.error('Error loading invoice logo:', e);
+      }
+
+      // Company info on the right
       const headerRightX = 350;
-      doc.fontSize(10).font('Helvetica').fillColor(tw.text)
-         .text('123 Luxury Ave, Suite 100', headerRightX, 40, { align: 'right', width: 200 });
-      doc.text('New York, NY 10001', headerRightX, 55, { align: 'right', width: 200 });
-      doc.text('+1 (555) 123-4567', headerRightX, 70, { align: 'right', width: 200 });
-      doc.text('concierge@crownvoyages.com', headerRightX, 85, { align: 'right', width: 200 });
+      doc.fontSize(8).font('Helvetica').fillColor(tw.textLight)
+         .text('Crown Voyages', headerRightX, 30, { align: 'right', width: 200 })
+         .text('Lot 20329 Nirolhu Magu Hulhumale', headerRightX, 30, { align: 'right', width: 200 })
+         .text("Male', Republic of Maldives", headerRightX, 40, { align: 'right', width: 200 })
+         .text('hello@crownvoyages.com', headerRightX, 50, { align: 'right', width: 200 })
+         .text('www.crownvoyages.com', headerRightX, 60, { align: 'right', width: 200 })
+         .text('(960) 400 1100', headerRightX, 70, { align: 'right', width: 200 })
+         .text('(960) 940 1100', headerRightX, 80, { align: 'right', width: 200 });
 
-      doc.moveTo(40, 105).lineTo(555, 105).strokeColor(tw.border).lineWidth(1).stroke();
-      doc.y = 120;
+      doc.y = 130;
 
       // Invoice Title
-      doc.fontSize(28).font('Helvetica-Bold').fillColor(tw.textDark).text('INVOICE', 40, 120, { align: 'right', width: 515 });
-      doc.fontSize(12).font('Helvetica').fillColor(tw.textLight).text(`#${invoice.invoiceNumber}`, 40, 150, { align: 'right', width: 515 });
-      doc.y = 180;
+      doc.fontSize(14).font('Helvetica-Bold').fillColor(tw.textDark).text('INVOICE', 0, doc.y, { align: 'center', width: 595 });
+      doc.y += 30;
 
-      // Two columns: Bill To and Invoice Info
-      const leftColumn = 40;
-      const rightColumn = 350;
-
-      // Bill To
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textLight).text('CUSTOMER:', leftColumn);
-      doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.textDark).text(invoice.customerName.toUpperCase(), leftColumn, doc.y + 5);
+      const infoStartY = doc.y;
       
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
-      if (invoice.email) doc.text(invoice.email, leftColumn);
-      if (invoice.phone) doc.text(invoice.phone, leftColumn);
+      // Left Column: Customer and Guest Names
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textDark).text('Customer:', 40, infoStartY);
+      doc.font('Helvetica-Bold').text(invoice.customerName || 'N/A', 110, infoStartY);
       
-      // Guest List if available
-      if (invoice.lead?.passengerDetails && invoice.lead.passengerDetails.length > 0) {
-        doc.moveDown(0.5);
-        doc.fontSize(9).font('Helvetica-Bold').fillColor(tw.textLight).text('GUEST NAME(S):');
-        invoice.lead.passengerDetails.forEach(p => {
-            doc.fontSize(9).font('Helvetica').fillColor(tw.textDark).text(`${p.name} (${p.type || 'Adult'})`);
-        });
+      // Add Email and Phone below name
+      let customerDetailsY = infoStartY + 15;
+      doc.fontSize(9).font('Helvetica').fillColor(tw.textLight);
+      if (invoice.email) {
+          doc.text(invoice.email, 110, customerDetailsY);
+          customerDetailsY += 12;
       }
+      if (invoice.phone) {
+          doc.text(invoice.phone, 110, customerDetailsY);
+          customerDetailsY += 12;
+      }
+      
+      doc.y = Math.max(infoStartY + 55, customerDetailsY + 10);
+      let guestY = doc.y;
 
-      // Invoice Details (Right Column)
-      doc.y = 180; // Reset Y for right column
-      const drawInfoLine = (label, value) => {
-          doc.fontSize(9).font('Helvetica-Bold').fillColor(tw.textLight).text(label, rightColumn, doc.y, { continued: true });
-          doc.font('Helvetica').fillColor(tw.textDark).text(` ${value}`, { align: 'right', width: 555 - rightColumn });
-          doc.y += 5;
+      // Right Column: Invoice Details
+      doc.y = infoStartY;
+      const detailsX = 380;
+      
+      const drawDetailRow = (label, value, color = tw.textDark) => {
+        const currentY = doc.y;
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(tw.textDark).text(label, detailsX, currentY, { continued: true });
+        doc.font('Helvetica-Bold').fillColor(color).text(value, { align: 'right', width: 555 - detailsX });
+        doc.y = currentY + 12;
       };
 
-      drawInfoLine('DATE:', new Date(invoice.createdAt).toLocaleDateString().toUpperCase());
-      drawInfoLine('INVOICE NO:', invoice.invoiceNumber);
-      
+      drawDetailRow('Date:', new Date(invoice.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }));
+      drawDetailRow('TIN:', '1168170GST001');
+      doc.y += 10;
+      const displayInvoiceNo = invoice.booking?.bookingNumber || invoice.invoiceNumber;
+      drawDetailRow('Invoice No:', displayInvoiceNo, tw.textDark);
       const taRef = invoice.booking?.bookingNumber || invoice.lead?.booking?.bookingNumber || invoice.lead?.leadNumber || 'N/A';
-      drawInfoLine('TA REF NO:', taRef);
-      
+      drawDetailRow('TA REF NO:', taRef, tw.textDark);
       if (invoice.dueDate) {
-        drawInfoLine('PAYMENT DUE DATE:', new Date(invoice.dueDate).toLocaleDateString().toUpperCase());
+        drawDetailRow('Payment Due Date:', new Date(invoice.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }), '#B91C1C');
       }
 
-      doc.moveDown(2);
-      doc.y = Math.max(doc.y, 280);
+      doc.y = Math.max(guestY + 20, doc.y + 20);
 
       // Items table
       const tableTop = doc.y;
       const cols = {
-          desc: { x: 40, w: 180 },
-          arr: { x: 220, w: 60 },
-          dep: { x: 280, w: 60 },
-          nights: { x: 340, w: 30 },
-          qty: { x: 370, w: 30 },
-          meal: { x: 400, w: 60 },
-          pax: { x: 460, w: 40 },
-          amount: { x: 500, w: 55 }
+          resort: { x: 40, w: 100 },
+          arrival: { x: 140, w: 50 },
+          departure: { x: 190, w: 50 },
+          nights: { x: 240, w: 25 },
+          room: { x: 265, w: 80 },
+          qty: { x: 345, w: 30 },
+          meal: { x: 375, w: 40 },
+          pax: { x: 415, w: 30 },
+          amount: { x: 445, w: 110 }
       };
 
       // Table Header
-      doc.rect(40, tableTop - 5, 515, 20).fill(tw.bg);
-      doc.fontSize(8).font('Helvetica-Bold').fillColor(tw.textDark);
-      doc.text('DESCRIPTION', cols.desc.x, tableTop);
-      doc.text('ARRIVAL', cols.arr.x, tableTop);
-      doc.text('DEPARTURE', cols.dep.x, tableTop);
-      doc.text('NTS', cols.nights.x, tableTop);
-      doc.text('QTY', cols.qty.x, tableTop);
-      doc.text('MEAL', cols.meal.x, tableTop);
-      doc.text('PAX', cols.pax.x, tableTop);
-      doc.text('AMOUNT', cols.amount.x, tableTop, { align: 'right', width: cols.amount.w });
+      doc.fontSize(7).font('Helvetica-Bold').fillColor(tw.textDark);
+      doc.text('Name of Resorts / Hotel', cols.resort.x, tableTop, { width: cols.resort.w, align: 'center' });
+      doc.text('Arrival', cols.arrival.x, tableTop, { width: cols.arrival.w, align: 'center' });
+      doc.text('Departure', cols.departure.x, tableTop, { width: cols.departure.w, align: 'center' });
+      doc.text('No of NTS', cols.nights.x, tableTop, { width: cols.nights.w, align: 'center' });
+      doc.text('Room Type', cols.room.x, tableTop, { width: cols.room.w, align: 'center' });
+      doc.text('No of Rooms', cols.qty.x, tableTop, { width: cols.qty.w, align: 'center' });
+      doc.text('Meal Plan', cols.meal.x, tableTop, { width: cols.meal.w, align: 'center' });
+      doc.text('No of Pax', cols.pax.x, tableTop, { width: cols.pax.w, align: 'center' });
+      doc.text('GRAND TOTAL WITH ALL TAXES INCLUDED', cols.amount.x, tableTop, { width: cols.amount.w, align: 'center' });
 
-      doc.moveTo(40, tableTop + 15).lineTo(555, tableTop + 15).strokeColor(tw.border).stroke();
+      doc.y += 20;
+      doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor(tw.border).lineWidth(0.5).stroke();
+      doc.y += 10;
 
       // Table Rows
-      let itemY = tableTop + 25;
-      doc.font('Helvetica').fontSize(9);
-
       const items = (invoice.items && invoice.items.length > 0) ? invoice.items : [{
-          description: `${invoice.lead?.resort?.name || 'Luxury Resort Stay'} - ${invoice.lead?.room?.roomType || invoice.lead?.room?.roomName || 'Premium Room'}`,
-          arrival: invoice.lead?.checkIn ? new Date(invoice.lead.checkIn).toLocaleDateString() : '-',
-          departure: invoice.lead?.checkOut ? new Date(invoice.lead.checkOut).toLocaleDateString() : '-',
+          resortName: invoice.lead?.resort?.name || 'Luxury Resort',
+          arrival: invoice.lead?.checkIn ? new Date(invoice.lead.checkIn).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-',
+          departure: invoice.lead?.checkOut ? new Date(invoice.lead.checkOut).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-',
           nights: invoice.lead?.checkIn && invoice.lead?.checkOut ? Math.ceil((new Date(invoice.lead.checkOut) - new Date(invoice.lead.checkIn)) / (86400000)) : '-',
-          quantity: 1,
+          roomType: invoice.lead?.room?.roomType || invoice.lead?.room?.roomName || 'Premium Room',
+          quantity: invoice.lead?.savedBookings?.[0]?.totalRooms || 1,
           mealPlan: invoice.lead?.mealPlan || '-',
-          pax: `${invoice.lead?.adults || 0}A ${invoice.lead?.children || 0}C`,
-          amount: invoice.totalNetAmount || invoice.amount || 0
+          pax: (invoice.lead?.adults || 0) + (invoice.lead?.children || 0),
+          amount: invoice.finalAmount || 0
       }];
 
+      doc.font('Helvetica-Bold').fontSize(8);
       items.forEach(item => {
-          doc.text(item.description || '-', cols.desc.x, itemY, { width: cols.desc.w });
-          doc.text(item.arrival || '-', cols.arr.x, itemY);
-          doc.text(item.departure || '-', cols.dep.x, itemY);
-          doc.text(String(item.nights || '-'), cols.nights.x, itemY);
-          doc.text(String(item.quantity || 1), cols.qty.x, itemY);
-          doc.text(item.mealPlan || '-', cols.meal.x, itemY);
-          doc.text(item.pax || '-', cols.pax.x, itemY);
-          doc.text(`$${(item.amount || 0).toFixed(2)}`, cols.amount.x, itemY, { align: 'right', width: cols.amount.w });
-          itemY += 25;
+          const rowY = doc.y;
+          doc.text(item.resortName || '-', cols.resort.x, rowY, { width: cols.resort.w, align: 'center' });
+          doc.text(item.arrival || '-', cols.arrival.x, rowY, { width: cols.arrival.w, align: 'center' });
+          doc.text(item.departure || '-', cols.departure.x, rowY, { width: cols.departure.w, align: 'center' });
+          doc.text(String(item.nights || '-'), cols.nights.x, rowY, { width: cols.nights.w, align: 'center' });
+          doc.text(item.roomType || '-', cols.room.x, rowY, { width: cols.room.w, align: 'center' });
+          doc.text(String(item.quantity || 1), cols.qty.x, rowY, { width: cols.qty.w, align: 'center' });
+          doc.text(item.mealPlan || '-', cols.meal.x, rowY, { width: cols.meal.w, align: 'center' });
+          doc.text(String(item.pax || '-'), cols.pax.x, rowY, { width: cols.pax.w, align: 'center' });
+          doc.text(`$${(item.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, cols.amount.x, rowY, { align: 'right', width: cols.amount.w });
+          doc.y += 30;
       });
 
-      doc.y = itemY + 20;
-
-      // Totals and Bank Details
-      const footerY = doc.y;
+      const tableBottom = doc.y;
       
-      // Bank Details (Left)
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textDark).text('BANK DETAILS:', 40, footerY);
-      doc.fontSize(8).font('Helvetica').fillColor(tw.textLight);
-      doc.text('Account Name: CROWN VOYAGES PVT LTD', 40, footerY + 15);
-      doc.text('Bank Name: BANK OF MALDIVES (BML)', 40, footerY + 25);
-      doc.text('USD Account: 7730000123456', 40, footerY + 35);
-      doc.text('SWIFT Code: MALBMVM', 40, footerY + 45);
+      // Draw table borders
+      doc.lineWidth(0.5).strokeColor(tw.border);
+      // Outer border
+      doc.rect(40, tableTop - 5, 515, tableBottom - tableTop + 5).stroke();
+      
+      // Column dividers
+      Object.values(cols).slice(0, -1).forEach(col => {
+         doc.moveTo(col.x + col.w + 2, tableTop - 5).lineTo(col.x + col.w + 2, tableBottom).stroke();
+      });
+
+      // Airport Transfer Row
+      if (invoice.lead?.transferType) {
+        doc.y += 10;
+        doc.fontSize(9).font('Helvetica-Bold').text('Airport Transfer', 40, doc.y);
+        doc.font('Helvetica').fontSize(8).text(invoice.lead.transferType, 160, doc.y, { width: 300 });
+        doc.y += 20;
+      }
 
       // Totals (Right)
-      const totalsWidth = 250;
+      const totalsWidth = 200;
       const totalsX = 555 - totalsWidth;
-      let ty = footerY;
+      doc.y += 20;
+      let ty = doc.y;
 
-      const drawTotalLine = (label, value, isFinal = false) => {
-          doc.fontSize(isFinal ? 10 : 9).font(isFinal ? 'Helvetica-Bold' : 'Helvetica').fillColor(isFinal ? tw.primary : tw.textDark);
-          doc.text(label, totalsX, ty);
-          doc.text(`$${value.toFixed(2)}`, totalsX, ty, { align: 'right', width: totalsWidth });
-          ty += 18;
+      const drawTotalLine = (label, value) => {
+          doc.fontSize(9).font('Helvetica-Bold').fillColor(tw.textDark);
+          doc.text(label, 300, ty, { align: 'right', width: 140 });
+          doc.text(`USD ${(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, totalsX, ty, { align: 'right', width: totalsWidth });
+          ty += 15;
       };
 
-      drawTotalLine('TOTAL NET AMOUNT', invoice.totalNetAmount || invoice.amount || 0);
-      if (invoice.greenTax) drawTotalLine('GREEN TAX', invoice.greenTax);
-      if (invoice.tgst) drawTotalLine('T-GST 17.00%', invoice.tgst);
-      if (invoice.discountValue) drawTotalLine('DISCOUNT', -invoice.discountValue);
+      const bookingFinalAmount = invoice.booking?.totalAmount || invoice.finalAmount || 0;
+      const bookingNetAmount = invoice.totalNetAmount || invoice.amount || 0;
+      const bookingGreenTax = invoice.greenTax || 0;
+      const bookingTgst = invoice.tgst || 0;
+
+      drawTotalLine('TOTAL NET AMOUNT', bookingNetAmount);
+      drawTotalLine('GREEN TAX', bookingGreenTax);
+      drawTotalLine('T-GST 17.00%', bookingTgst);
       
-      doc.moveTo(totalsX, ty - 5).lineTo(555, ty - 5).strokeColor(tw.border).stroke();
       ty += 5;
-      drawTotalLine('GRAND TOTAL WITH ALL TAXES INCLUDED', invoice.finalAmount || 0, true);
-      
-      if (invoice.paidAmount > 0) drawTotalLine('PAID', invoice.paidAmount);
-      if (invoice.balance > 0) drawTotalLine('BALANCE DUE', invoice.balance);
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textDark);
+      doc.text('GRAND TOTAL WITH ALL TAXES INCLUDED', 300, ty, { align: 'right', width: 140 });
+      doc.text(`USD ${bookingFinalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, totalsX, ty, { align: 'right', width: totalsWidth });
+
+      doc.y = ty + 40;
+      const bottomY = doc.y;
+
+      // Bank Details
+      doc.fontSize(10).font('Helvetica-Bold').text('BANK DETAILS:', 40, bottomY);
+      doc.fontSize(9).font('Helvetica').fillColor(tw.textLight);
+      doc.text('Account Name: Crown Voyages Pvt Ltd', 60, bottomY + 15);
+      doc.text('USD Dollar Account No. 7730-000184-076', 60, bottomY + 30);
+      doc.text('Name of the Bank: Bank of Maldives', 60, bottomY + 45);
+      doc.text("Address of the Bank: Boduthakurufaanu Magu, Henveiru, Male'", 60, bottomY + 60);
+      doc.text('SWIFT Code: MALBMVMV', 60, bottomY + 75);
 
       // Remarks
-      doc.y = Math.max(ty + 20, footerY + 80);
+      doc.y = bottomY + 110;
       doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textDark).text('REMARKS:');
       doc.fontSize(8).font('Helvetica').fillColor(tw.textLight);
-      doc.text('* Any discrepancy found in this invoice should be advised within 24 hours.', { width: 515 });
-      doc.text('* Inclusive of all taxes and service charges.');
-      doc.text('* Payment must be settled as per above deadline to avoid booking cancellation.');
-      doc.text('* For Bank Transfers, all bank fees are applicable by the customer.');
-      if (invoice.notes) doc.text(`* ${invoice.notes}`);
+      const remarks = [
+        '* Any discrepancy found in this invoice should be advised to Crown Voyages within 24 hours.',
+        '* Inclusive of all taxes and service charges.',
+        '* Payment must be settled as per above deadline to avoid booking cancellation.',
+        '* For Bank Transfers, all bank fees are applicable by the customer.',
+        '* 4% Bank Charge applicable for Credit Card Payments.',
+        '* Bank charges will be deducted incase of refund.',
+        '* Cancellation applied 100% within 30 Days of arrival'
+      ];
+      remarks.forEach(r => {
+        doc.text(r);
+        doc.y += 2;
+      });
 
-      // Footer
-      const footerBottomY = doc.page.height - 80;
-      doc.moveTo(40, footerBottomY).lineTo(555, footerBottomY).strokeColor(tw.border).lineWidth(0.5).stroke();
+      // Signature Section (Right)
+      const sigX = 400;
+      const sigY = Math.min(doc.page.height - 150, doc.y + 40);
       
-      doc.fontSize(8).font('Helvetica-Bold').fillColor(tw.textDark).text('Prepared by:', 40, footerBottomY + 10);
-      doc.font('Helvetica').text('Accounts Department', 40, footerBottomY + 22);
+      try {
+        const possiblePaths = [
+          path.join(process.cwd(), 'client/src/assets/report_logo.png'),
+          path.join(process.cwd(), '../client/src/assets/report_logo.png')
+        ];
+        let logoPath = null;
+        for (const p of possiblePaths) {
+          if (fs.existsSync(p)) {
+            logoPath = p;
+            break;
+          }
+        }
+        if (logoPath) {
+          doc.save();
+          doc.rect(sigX + 50, sigY, 60, 40).clip();
+          doc.image(logoPath, sigX + 50, sigY, { width: 60 });
+          doc.restore();
+        }
+      } catch (e) {
+        try { doc.restore(); } catch (e2) {}
+      }
       
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 0, footerBottomY + 10, { align: 'center', width: 595 });
-      doc.fontSize(8).font('Helvetica').fillColor(tw.textLight).text('Luxury Travel Management', 0, footerBottomY + 22, { align: 'center', width: 595 });
+      doc.fontSize(9).font('Helvetica').fillColor(tw.textLight);
+      doc.text('Prepared by: Ryan', sigX, sigY + 50);
+      doc.text('Accounts Department', sigX, sigY + 65);
+      doc.text(`Date: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}`, sigX, sigY + 80);
 
       doc.end();
     } catch (error) {
+      console.error('Error in invoice PDF:', error);
       reject(error);
     }
   });
@@ -832,111 +937,137 @@ export const generatePaymentReceiptPDF = async (payment, invoice) => {
         textLight: '#4B5563', 
         textDark: '#111827', 
         white: '#FFFFFF',
-        border: '#E5E7EB',
-        green: '#10B981',
-        red: '#EF4444'
+        border: '#000000',
+        borderLight: '#E5E7EB'
       };
 
       // --- HEADER ---
-      doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text('Luxury Travel Management', 40, 65);
+      // Logo on the left
+      try {
+        const possiblePaths = [
+          path.join(process.cwd(), 'client/src/assets/report_logo.png'),
+          path.join(process.cwd(), '../client/src/assets/report_logo.png'),
+          path.join(process.cwd(), 'src/assets/report_logo.jpeg'),
+          path.join(process.cwd(), '../client/src/assets/report_logo.jpeg'),
+          path.join(process.cwd(), 'src/assets/report_logo.png')
+        ];
+        let logoPath = null;
+        for (const p of possiblePaths) {
+          if (fs.existsSync(p)) { logoPath = p; break; }
+        }
+        if (logoPath) {
+          doc.image(logoPath, 40, 30, { width: 120 });
+        }
+      } catch (e) {}
 
+      // Company info on the right
       const headerRightX = 350;
-      doc.fontSize(10).font('Helvetica').fillColor(tw.text)
-         .text('123 Luxury Ave, Suite 100', headerRightX, 40, { align: 'right', width: 200 });
-      doc.text('New York, NY 10001', headerRightX, 55, { align: 'right', width: 200 });
-      doc.text('+1 (555) 123-4567', headerRightX, 70, { align: 'right', width: 200 });
-      doc.text('concierge@crownvoyages.com', headerRightX, 85, { align: 'right', width: 200 });
-
-      doc.moveTo(40, 105).lineTo(555, 105).strokeColor(tw.border).lineWidth(1).stroke();
-      doc.y = 130;
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textDark)
+         .text('CROWN VOYAGES', headerRightX, 30, { align: 'right', width: 200 });
+      doc.fontSize(8).font('Helvetica').fillColor(tw.textLight)
+         .text('accounts@crownvoyages.com', headerRightX, 42, { align: 'right', width: 200 })
+         .text('www.crownvoyages.com', headerRightX, 52, { align: 'right', width: 200 })
+         .text('(960) 400 1100', headerRightX, 62, { align: 'right', width: 200 })
+         .text('(960) 940 1100', headerRightX, 72, { align: 'right', width: 200 });
 
       // Receipt Title
-      doc.fontSize(18).font('Helvetica-Bold').fillColor(tw.textDark).text('PAYMENT RECEIPT', 40, 130, { align: 'center' });
-      doc.fontSize(12).font('Helvetica').fillColor(tw.textLight).text(`#${payment.paymentId}`, 40, 155, { align: 'center' });
-      doc.moveDown(2);
+      const title = 'PAYMENT RECEIPT';
+      doc.fontSize(16).font('Helvetica-Bold').fillColor(tw.textDark);
+      const titleWidth = doc.widthOfString(title);
+      const titleX = (595 - titleWidth) / 2;
+      doc.text(title, 0, 110, { align: 'center', width: 595 });
+      doc.moveTo(titleX, 128).lineTo(titleX + titleWidth, 128).lineWidth(1.5).strokeColor(tw.textDark).stroke();
 
-      // Amount Confirmation
-      doc.roundedRect(150, doc.y, 295, 80, 10).fill(tw.primary);
-      doc.fillColor(tw.white);
-      doc.fontSize(36).font('Helvetica-Bold').text(`$${payment.amount.toFixed(2)}`, 150, doc.y + 20, { width: 295, align: 'center' });
-      doc.fontSize(12).font('Helvetica').text('Amount Received', 150, doc.y + 60, { width: 295, align: 'center' });
-      doc.moveDown(5);
-      doc.y += 40;
+      doc.y = 160;
+      const infoStartY = doc.y;
 
-      const leftColumn = 40;
-      const rightColumn = 300;
+      // Left Column: Received From
+      doc.fontSize(10).font('Helvetica-Bold').text('Payment Received From:', 40, infoStartY);
+      doc.fontSize(9).font('Helvetica').text(invoice.customerName || 'N/A', 40, infoStartY + 25);
 
-      // Payment Details
-      doc.fontSize(14).font('Helvetica-Bold').fillColor(tw.primary).text('Payment Details', leftColumn, doc.y);
-      const detailY = doc.y + 20;
-      
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
-      doc.text('Date:', leftColumn, detailY);
-      doc.text(new Date(payment.date).toLocaleDateString(), leftColumn + 100, detailY);
-      
-      doc.text('Method:', leftColumn, detailY + 15);
-      doc.text(payment.method, leftColumn + 100, detailY + 15);
-      
-      if (payment.transactionId) {
-        doc.text('Transaction ID:', leftColumn, detailY + 30);
-        doc.text(payment.transactionId, leftColumn + 100, detailY + 30);
-      }
+      // Right Column: Details
+      const detailsX = 350;
+      const drawDetailRow = (label, value, y) => {
+        doc.fontSize(9).font('Helvetica-Bold').text(label, detailsX, y);
+        doc.font('Helvetica').text(value, detailsX + 80, y, { align: 'right', width: 555 - (detailsX + 80) });
+      };
 
-      // Paid By
-      doc.fontSize(14).font('Helvetica-Bold').fillColor(tw.primary).text('Paid By', rightColumn, doc.y - 45); // Align top
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
-      doc.text(invoice.customerName, rightColumn, detailY);
-      doc.text(invoice.email, rightColumn, detailY + 15);
-      doc.text(`Inv Ref: ${invoice.invoiceNumber}`, rightColumn, detailY + 30);
+      const displayInvoiceNo = invoice.booking?.bookingNumber || invoice.invoiceNumber;
+      drawDetailRow('Ref No:', displayInvoiceNo, infoStartY);
+      drawDetailRow('Payment Date:', new Date(payment.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), infoStartY + 14);
+      drawDetailRow('Currency:', 'USD', infoStartY + 28);
+      drawDetailRow('Payment Type:', payment.method || 'Bank transfer', infoStartY + 42);
 
-      doc.moveDown(4);
-      doc.y = detailY + 60;
+      doc.y = infoStartY + 80;
 
-      // Invoice Summary (Mini Table)
-      doc.fontSize(14).font('Helvetica-Bold').fillColor(tw.primary).text('Account Summary', leftColumn, doc.y);
-      doc.y += 10;
-      
-      doc.strokeColor(tw.border).lineWidth(1).moveTo(leftColumn, doc.y).lineTo(555, doc.y).stroke();
-      doc.y += 10;
+      // Table
+      const tableTop = doc.y;
+      const cols = {
+        date: { x: 40, w: 70, label: 'Date' },
+        rectNo: { x: 110, w: 70, label: 'Receipt No' },
+        invTotal: { x: 180, w: 75, label: 'Invoice Total' },
+        paidSoFar: { x: 255, w: 75, label: 'Paid So Far' },
+        remBal: { x: 330, w: 75, label: 'Rem Balance' },
+        amtPaid: { x: 405, w: 75, label: 'Amount Paid' },
+        balance: { x: 480, w: 75, label: 'Balance' }
+      };
 
-      const summaryRows = [
-        ['Invoice Total', `$${invoice.finalAmount.toFixed(2)}`, tw.textDark],
-        ['Total Paid To Date', `$${invoice.paidAmount.toFixed(2)}`, tw.textDark],
-        ['Remaining Balance', `$${invoice.balance.toFixed(2)}`, invoice.balance > 0 ? tw.red : tw.green]
-      ];
-
-      summaryRows.forEach(([label, value, color]) => {
-         doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textLight).text(label, leftColumn, doc.y);
-         doc.fillColor(color).text(value, 450, doc.y, { align: 'right' });
-         doc.y += 20;
+      // Table Header Row
+      doc.fontSize(8).font('Helvetica-Bold');
+      Object.values(cols).forEach(col => {
+        doc.text(col.label, col.x + 2, tableTop + 2, { width: col.w - 4, align: 'left' });
       });
 
-      doc.strokeColor(tw.border).lineWidth(1).moveTo(leftColumn, doc.y).lineTo(555, doc.y).stroke();
+      doc.y = tableTop + 20;
+      doc.moveTo(40, doc.y).lineTo(555, doc.y).lineWidth(1).strokeColor(tw.textDark).stroke();
+      
+      // Data Row
+      const rowY = doc.y + 8;
+      doc.fontSize(7.5).font('Helvetica');
+      doc.text(new Date(invoice.createdAt || payment.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), cols.date.x + 2, rowY);
+      doc.text(payment.transactionId || payment.paymentId || '-', cols.rectNo.x + 2, rowY);
 
-      // Notes
-      if (payment.notes) {
-        doc.y += 30;
-        doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('Notes:', leftColumn);
-        doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text(payment.notes, leftColumn);
+      // Sourcing data: prefer invoice.finalAmount as the "created invoice price"
+      // prefer booking.bookingNumber as the "relevant booking id"
+      const bookingNumber = invoice.booking?.bookingNumber || payment.booking?.bookingNumber || '';
+      const bookingTotalAmount = invoice.finalAmount || invoice.booking?.totalAmount || 0;
+      const currentBookingBalance = invoice.booking?.balance || invoice.balance || 0;
+      const currentPayment = payment.amount || 0;
+      
+      const remBalPre = currentBookingBalance + currentPayment;
+      const paidSoFarPre = bookingTotalAmount - remBalPre;
+
+      if (bookingNumber && bookingNumber !== 'N/A') {
+        doc.fontSize(7).text(`${bookingNumber}`, cols.invTotal.x + 2, rowY - 2);
+        doc.fontSize(7.5).text(`USD ${bookingTotalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.invTotal.x + 2, rowY + 8);
+      } else {
+        doc.fontSize(7.5).text(`USD ${bookingTotalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.invTotal.x + 2, rowY + 3);
       }
+      
+      doc.fontSize(7.5).text(`USD ${paidSoFarPre.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.paidSoFar.x + 2, rowY + 3);
+      doc.text(`USD ${remBalPre.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.remBal.x + 2, rowY + 3);
+      doc.text(`USD ${currentPayment.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.amtPaid.x + 2, rowY + 3);
+      doc.text(`USD ${currentBookingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.balance.x + 2, rowY + 3);
 
-      // --- FOOTER SECTION ---
-      // Standard footer at bottom
-      let footerY = doc.page.height - 80;
+      const bottomLineY = rowY + 20;
+      doc.moveTo(40, bottomLineY).lineTo(555, bottomLineY).lineWidth(0.5).stroke();
       
-      // Divider
-      doc.moveTo(40, footerY).lineTo(555, footerY).strokeColor(tw.border).lineWidth(1).stroke();
+      const summaryLineY = bottomLineY + 20;
+      doc.fontSize(8).font('Helvetica-Bold');
+      doc.text(`USD ${currentBookingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.balance.x + 2, summaryLineY - 12, { width: cols.balance.w - 4, align: 'left' });
       
-      // Crown Voyages Footer Details
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('Crown Voyages', 40, footerY + 10, { align: 'center', width: 515 });
-      doc.fontSize(8).font('Helvetica').fillColor(tw.textLight)
-         .text('123 Luxury Ave, Suite 100, New York, NY 10001', 40, footerY + 25, { align: 'center', width: 515 });
-      doc.text('www.crownvoyages.com | concierge@crownvoyages.com', 40, footerY + 35, { align: 'center', width: 515 });
-      doc.text('Thank you for choosing us for your luxury travel needs.', 40, footerY + 48, { align: 'center', width: 515 });
+      doc.moveTo(40, summaryLineY).lineTo(555, summaryLineY).lineWidth(1).stroke();
+
+      // Border (No vertical dividers)
+      const tableHeight = summaryLineY - tableTop;
+      doc.rect(40, tableTop, 515, tableHeight).lineWidth(1).strokeColor(tw.textDark).stroke();
+      
+      // No Vertical Dividers as requested
+      // doc.moveTo(col.x + col.w, tableTop).lineTo(col.x + col.w, summaryLineY).stroke();
 
       doc.end();
     } catch (error) {
+      console.error('Error in payment receipt PDF:', error);
       reject(error);
     }
   });
@@ -958,112 +1089,138 @@ export const generateReceiptPDF = async (receipt) => {
         textLight: '#4B5563', 
         textDark: '#111827', 
         white: '#FFFFFF',
-        border: '#E5E7EB'
+        border: '#000000',
+        borderLight: '#E5E7EB'
       };
 
       // --- HEADER ---
-      doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text('Luxury Travel Management', 40, 65);
+      // Logo on the left
+      try {
+        const logoPaths = [
+          path.join(process.cwd(), 'client', 'src', 'assets', 'report_logo.png'),
+          path.join(process.cwd(), '..', 'client', 'src', 'assets', 'report_logo.png'),
+          path.join(process.cwd(), 'server', 'uploads', 'logo.png'),
+          path.join(process.cwd(), 'uploads', 'logo.png')
+        ];
+        let logoPath = null;
+        for (const p of logoPaths) {
+          if (fs.existsSync(p)) { logoPath = p; break; }
+        }
+        if (logoPath) {
+          doc.image(logoPath, 40, 30, { width: 120 });
+        }
+      } catch (e) {}
 
+      // Company info on the right
       const headerRightX = 350;
-      doc.fontSize(10).font('Helvetica').fillColor(tw.text)
-         .text('123 Luxury Ave, Suite 100', headerRightX, 40, { align: 'right', width: 200 });
-      doc.text('New York, NY 10001', headerRightX, 55, { align: 'right', width: 200 });
-      doc.text('+1 (555) 123-4567', headerRightX, 70, { align: 'right', width: 200 });
-      doc.text('concierge@crownvoyages.com', headerRightX, 85, { align: 'right', width: 200 });
-
-      doc.moveTo(40, 105).lineTo(555, 105).strokeColor(tw.border).lineWidth(1).stroke();
-      doc.y = 130;
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textDark)
+         .text('CROWN VOYAGES', headerRightX, 30, { align: 'right', width: 200 });
+      doc.fontSize(8).font('Helvetica').fillColor(tw.textLight)
+         .text('accounts@crownvoyages.com', headerRightX, 42, { align: 'right', width: 200 })
+         .text('www.crownvoyages.com', headerRightX, 52, { align: 'right', width: 200 })
+         .text('(960) 400 1100', headerRightX, 62, { align: 'right', width: 200 })
+         .text('(960) 940 1100', headerRightX, 72, { align: 'right', width: 200 });
 
       // Receipt Title
-      doc.fontSize(18).font('Helvetica-Bold').fillColor(tw.textDark).text('OFFICIAL RECEIPT', 40, 130, { align: 'center' });
-      doc.fontSize(12).font('Helvetica').fillColor(tw.textLight).text(receipt.receiptNumber, 40, 155, { align: 'center' });
-      doc.moveDown(2);
+      const title = 'PAYMENT RECEIPT';
+      doc.fontSize(16).font('Helvetica-Bold').fillColor(tw.textDark);
+      const titleWidth = doc.widthOfString(title);
+      const titleX = (595 - titleWidth) / 2;
+      doc.text(title, 0, 110, { align: 'center', width: 595 });
+      doc.moveTo(titleX, 128).lineTo(titleX + titleWidth, 128).lineWidth(1.5).strokeColor(tw.textDark).stroke();
 
-      // Two columns: Received From and Receipt Info
-      const leftColumn = 40;
-      const rightColumn = 350;
+      doc.y = 160;
+      const infoStartY = doc.y;
 
-      // Received From
-      doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('Received From:', leftColumn);
+      // Left Column: Received From
+      doc.fontSize(10).font('Helvetica-Bold').text('Payment Received From:', 40, infoStartY);
+      doc.fontSize(9).font('Helvetica').text(receipt.customerName || 'N/A', 40, infoStartY + 25);
+      if (receipt.email) doc.fontSize(8).text(receipt.email, 40, infoStartY + 38);
+      if (receipt.phone) doc.fontSize(8).text(receipt.phone, 40, infoStartY + 48);
+
+      // Right Column: Details
+      const detailsX = 350;
+      const drawDetailRow = (label, value, y) => {
+        doc.fontSize(9).font('Helvetica-Bold').text(label, detailsX, y);
+        doc.font('Helvetica').text(value, detailsX + 80, y, { align: 'right', width: 555 - (detailsX + 80) });
+      };
+
+      const refNo = receipt.invoice?.booking?.bookingNumber || receipt.invoice?.invoiceNumber || receipt.receiptNumber;
+      drawDetailRow('Ref No:', refNo, infoStartY);
+      drawDetailRow('Date:', new Date(receipt.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), infoStartY + 14);
+      drawDetailRow('Currency:', 'USD', infoStartY + 28);
+      drawDetailRow('Payment Type:', receipt.paymentMethod || 'Bank transfer', infoStartY + 42);
+
+      doc.y = infoStartY + 80;
+
+      // Table
+      const tableTop = doc.y;
+      const cols = {
+        date: { x: 40, w: 70, label: 'Date' },
+        rectNo: { x: 110, w: 70, label: 'Receipt No' },
+        invTotal: { x: 180, w: 75, label: 'Invoice Total' },
+        paidSoFar: { x: 255, w: 75, label: 'Paid So Far' },
+        remBal: { x: 330, w: 75, label: 'Rem Balance' },
+        amtPaid: { x: 405, w: 75, label: 'Amount Paid' },
+        balance: { x: 480, w: 75, label: 'Balance' }
+      };
+
+      // Table Header Row
+      doc.fontSize(8).font('Helvetica-Bold');
+      Object.values(cols).forEach(col => {
+        doc.text(col.label, col.x + 2, tableTop + 2, { width: col.w - 4, align: 'left' });
+      });
+
+      doc.y = tableTop + 20;
+      doc.moveTo(40, doc.y).lineTo(555, doc.y).lineWidth(1).strokeColor(tw.textDark).stroke();
       
-      const bookingRef = receipt.lead?.booking?.bookingNumber;
-      if (bookingRef) {
-         doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.textLight).text(`Booking Ref: ${bookingRef}`, leftColumn);
-         doc.moveDown(0.2);
-      }
+      // Data Row
+      const rowY = doc.y + 8;
+      doc.fontSize(7.5).font('Helvetica');
+      doc.text(new Date(receipt.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), cols.date.x + 2, rowY);
+      doc.text(receipt.receiptNumber, cols.rectNo.x + 2, rowY);
+
+      // Sourcing data: prefer invoice.finalAmount as the "created invoice price"
+      // prefer booking.bookingNumber as the "relevant booking id"
+      const bookingNumber = receipt.invoice?.booking?.bookingNumber || receipt.booking?.bookingNumber || '';
+      const bookingTotalAmount = receipt.invoice?.finalAmount || receipt.bookingTotal || 0;
+      const currentBookingBalance = receipt.invoice?.booking?.balance || receipt.remainingBalance || 0;
+      const currentPayment = receipt.finalAmount || 0;
       
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
-      doc.text(receipt.customerName, leftColumn);
-      doc.text(receipt.email, leftColumn);
-      if (receipt.phone) doc.text(receipt.phone, leftColumn);
+      const remBalPre = currentBookingBalance + currentPayment;
+      const paidSoFarPre = bookingTotalAmount - remBalPre;
 
-      // Receipt Info
-      // Align top with Received From section title which is at Y ~175 (130+25+2linegaps)
-      // Actually Invoice uses hardcoded 190.
-      doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('Receipt Details:', rightColumn, 190); 
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
-      doc.text(`Date: ${new Date(receipt.createdAt).toLocaleDateString()}`, rightColumn);
-      doc.text(`Method: ${receipt.paymentMethod}`, rightColumn);
-
-      doc.moveDown(4);
-      doc.y = 260;
-
-      // Pricing Details
-      // Center the totals
-      const totalsWidth = 300;
-      const totalsX = (595 - totalsWidth) / 2;
-      let totalsY = doc.y;
-
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textDark);
-      doc.text('Base Amount:', totalsX, totalsY);
-      doc.text(`$${(receipt.amount || 0).toFixed(2)}`, totalsX, totalsY, { align: 'right', width: totalsWidth });
-      totalsY += 20;
-
-      if (receipt.discountValue > 0) {
-        doc.text('Discount:', totalsX, totalsY);
-        doc.text(`-$${(receipt.discountValue || 0).toFixed(2)}`, totalsX, totalsY, { align: 'right', width: totalsWidth });
-        totalsY += 20;
-      }
-
-      doc.strokeColor(tw.border).lineWidth(1);
-      doc.moveTo(totalsX, totalsY).lineTo(totalsX + totalsWidth, totalsY).stroke();
-      totalsY += 10;
-
-      doc.fontSize(14).font('Helvetica-Bold').fillColor(tw.primary);
-      doc.text('Total Received:', totalsX, totalsY);
-      doc.text(`$${(receipt.finalAmount || 0).toFixed(2)}`, totalsX, totalsY, { align: 'right', width: totalsWidth });
-
-      // Notes
-      if (receipt.notes) {
-        doc.y = totalsY + 30;
-        doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('Notes:', leftColumn);
-        doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text(receipt.notes, leftColumn);
-      }
-
-      // --- FOOTER SECTION ---
-      // Ensure footer fits
-      if (doc.y + 80 > doc.page.height - 50) {
-        doc.addPage();
-        doc.y = 40;
+      if (bookingNumber && bookingNumber !== 'N/A') {
+        doc.fontSize(7).text(`${bookingNumber}`, cols.invTotal.x + 2, rowY - 2);
+        doc.fontSize(7.5).text(`USD ${bookingTotalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.invTotal.x + 2, rowY + 8);
       } else {
-        doc.moveDown(1);
+        doc.fontSize(7.5).text(`USD ${bookingTotalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.invTotal.x + 2, rowY + 3);
       }
       
-      const footerStartY = doc.y;
+      doc.fontSize(7.5).text(`USD ${paidSoFarPre.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.paidSoFar.x + 2, rowY + 3);
+      doc.text(`USD ${remBalPre.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.remBal.x + 2, rowY + 3);
+      doc.text(`USD ${currentPayment.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.amtPaid.x + 2, rowY + 3);
+      doc.text(`USD ${currentBookingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.balance.x + 2, rowY + 3);
+
+      const bottomLineY = rowY + 20;
+      doc.moveTo(40, bottomLineY).lineTo(555, bottomLineY).lineWidth(0.5).stroke();
       
-      // Divider
-      doc.moveTo(40, footerStartY).lineTo(555, footerStartY).strokeColor(tw.border).lineWidth(1).stroke();
+      const summaryLineY = bottomLineY + 20;
+      doc.fontSize(8).font('Helvetica-Bold');
+      doc.text(`USD ${currentBookingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, cols.balance.x + 2, summaryLineY - 12, { width: cols.balance.w - 4, align: 'left' });
       
-      // Crown Voyages Footer Details
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('Crown Voyages', 40, footerStartY + 10, { align: 'center', width: 515 });
-      doc.fontSize(8).font('Helvetica').fillColor(tw.textLight)
-         .text('123 Luxury Ave, Suite 100, New York, NY 10001', 40, footerStartY + 25, { align: 'center', width: 515 });
-      doc.text('www.crownvoyages.com | concierge@crownvoyages.com', 40, footerStartY + 35, { align: 'center', width: 515 });
-      doc.text('Thank you for choosing us for your luxury travel needs.', 40, footerStartY + 48, { align: 'center', width: 515 });
+      doc.moveTo(40, summaryLineY).lineTo(555, summaryLineY).lineWidth(1).stroke();
+
+      // Border (No vertical dividers)
+      const tableHeight = summaryLineY - tableTop;
+      doc.rect(40, tableTop, 515, tableHeight).lineWidth(1).strokeColor(tw.textDark).stroke();
+      
+      // No Vertical Dividers as requested
+      // doc.moveTo(col.x + col.w, tableTop).lineTo(col.x + col.w, summaryLineY).stroke();
 
       doc.end();
     } catch (error) {
+      console.error('Error in receipt PDF:', error);
       reject(error);
     }
   });
@@ -1084,185 +1241,210 @@ export const generateVoucherPDF = async (booking) => {
       doc.on('data', chunk => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-      // Helper function to download and add image
-      const addImage = async (imageUrl, x, y, options = {}) => {
-        try {
-          if (!imageUrl || !imageUrl.startsWith('http')) return;
-          const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-          doc.image(Buffer.from(response.data), x, y, options);
-        } catch (error) {
-          console.log('Error loading image:', error.message);
-        }
+      // Main Page Border
+      doc.rect(20, 20, 555, 802).strokeColor('#000000').lineWidth(0.5).stroke();
+
+      // Helper function to format dates like in the image
+      const formatLongDate = (date) => {
+        if (!date) return 'N/A';
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return 'N/A';
+        return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
       };
 
-      // Tailwind-matched Palette
-      const tw = {
-        primary: '#D4AF37', // Gold
-        text: '#1F2937', // Gray-800
-        textLight: '#4B5563', // Gray-600
-        textDark: '#111827', // Gray-900
-        white: '#FFFFFF',
-        border: '#E5E7EB', // Gray-200
-        green50: '#F0FDF4',
-        green600: '#16A34A',
-        blue50: '#EFF6FF',
-        blue600: '#2563EB',
-        purple50: '#FAF5FF',
-        purple600: '#9333EA',
-      };
-
-      const checkPageBreak = (heightNeeded) => {
-        if (doc.y + heightNeeded > doc.page.height - 50) {
-          doc.addPage();
-          doc.y = 40;
-          return true;
-        }
-        return false;
+      const formatShortDate = (date) => {
+        if (!date) return 'N/A';
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return 'N/A';
+        return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
       };
 
       // --- HEADER ---
-      doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
-      doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text('Luxury Travel Management', 40, 65);
+      // Left Logo
+      const logoPaths = [
+        path.join(process.cwd(), 'client', 'src', 'assets', 'report_logo.png'),
+        path.join(process.cwd(), '..', 'client', 'src', 'assets', 'report_logo.png'),
+        path.join(process.cwd(), 'server', 'uploads', 'logo.png'),
+        path.join(process.cwd(), 'uploads', 'logo.png')
+      ];
+      
+      let finalLogoPath = null;
+      for (const p of logoPaths) {
+        if (fs.existsSync(p)) {
+          finalLogoPath = p;
+          break;
+        }
+      }
 
+      if (finalLogoPath) {
+        doc.image(finalLogoPath, 40, 30, { width: 140 });
+      }
+
+      // Right Header Info
       const headerRightX = 350;
-      doc.fontSize(10).font('Helvetica').fillColor(tw.text)
-         .text('123 Luxury Ave, Suite 100', headerRightX, 40, { align: 'right', width: 200 });
-      doc.text('New York, NY 10001', headerRightX, 55, { align: 'right', width: 200 });
-      doc.text('+1 (555) 123-4567', headerRightX, 70, { align: 'right', width: 200 });
-      doc.text('concierge@crownvoyages.com', headerRightX, 85, { align: 'right', width: 200 });
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('CROWN VOYAGES', headerRightX, 30, { align: 'right', width: 200 });
+      doc.font('Helvetica').fontSize(8).fillColor('#4B5563');
+      doc.text('Lot 20329 | Nirolhu magu Hulhumale', headerRightX, 45, { align: 'right', width: 200 });
+      doc.text("Male', Republic of Maldives", headerRightX, 57, { align: 'right', width: 200 });
+      doc.text('hello@crownvoyages.com', headerRightX, 69, { align: 'right', width: 200 });
+      doc.text('www.crownvoyages.com', headerRightX, 81, { align: 'right', width: 200 });
+      doc.text('(960) 400 1100', headerRightX, 93, { align: 'right', width: 200 });
+      doc.text('(960) 940 1100', headerRightX, 105, { align: 'right', width: 200 });
 
-      doc.moveTo(40, 105).lineTo(555, 105).strokeColor(tw.border).lineWidth(1).stroke();
-      doc.y = 130;
+      // Title
+      doc.font('Helvetica-Bold').fontSize(18).fillColor('#000000').text('HOTEL VOUCHER', 40, 145, { align: 'center' });
 
-      // --- VOUCHER TITLE ---
-      doc.fontSize(18).font('Helvetica-Bold').fillColor(tw.textDark).text('BOOKING VOUCHER', 40, doc.y, { align: 'center' });
-      doc.moveDown(1);
-
-      // --- VOUCHER INFO ---
-      const infoY = doc.y;
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('BOOKING DETAILS', 40, infoY);
-      doc.fontSize(10).font('Helvetica').fillColor(tw.text)
-         .text(`Voucher No: VCH-${booking.bookingNumber || booking.leadNumber}`, 40, infoY + 20)
-         .text(`Status: CONFIRMED`, 40, infoY + 35)
-         .text(`Date: ${new Date().toLocaleDateString()}`, 40, infoY + 50);
-
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('GUEST DETAILS', 300, infoY);
-      doc.fontSize(10).font('Helvetica').fillColor(tw.text)
-         .text(`Primary Guest: ${booking.guestName}`, 300, infoY + 20)
-         .text(`Email: ${booking.email}`, 300, infoY + 35)
-         .text(`Phone: ${booking.phone}`, 300, infoY + 50);
-
-      doc.moveDown(4);
-
-      // --- RESORT & ROOM INFO ---
-      const resortY = doc.y;
-      doc.rect(40, resortY, 515, 80).fill(tw.blue50);
+      // Info Bar
+      const barY = 175;
+      doc.moveTo(40, barY - 5).lineTo(555, barY - 5).strokeColor('#E5E7EB').lineWidth(0.5).stroke();
       
-      const resort = booking.resort || {};
-      const room = booking.room || {};
+      doc.fontSize(10).font('Helvetica-Bold').text('Voucher No:', 40, barY);
+      doc.font('Helvetica').text(booking.voucherNumber || booking.bookingNumber || 'N/A', 110, barY);
 
-      doc.fillColor(tw.blue600).font('Helvetica-Bold').fontSize(12).text(resort.name || 'Resort Name', 55, resortY + 15);
-      doc.fontSize(10).font('Helvetica').fillColor(tw.text).text(resort.location || 'Resort Location', 55, resortY + 35);
+      doc.font('Helvetica-Bold').text('Booking Date:', 210, barY);
+      doc.font('Helvetica').text(formatShortDate(booking.createdAt || new Date()), 280, barY);
+
+      doc.font('Helvetica-Bold').text('Issuing Date:', 400, barY);
+      doc.font('Helvetica').text(formatShortDate(new Date()), 470, barY);
+
+      doc.moveTo(40, barY + 15).lineTo(555, barY + 15).strokeColor('#E5E7EB').stroke();
+
+      // Main Content
+      let currentY = 210;
+      const leftColX = 40;
+      const leftValX = 160;
+      const rightColX = 380;
+      const rightValX = 480;
+
+      // Primary Guest Information
+      doc.font('Helvetica-Bold').fontSize(10).text('Confirmation for:', leftColX, currentY);
+      doc.font('Helvetica').text(booking.guestName || booking.customerName || 'N/A', leftValX, currentY);
       
-      doc.fontSize(11).font('Helvetica-Bold').fillColor(tw.textDark).text(room.roomName || room.roomType || 'Room Details', 55, resortY + 55);
-      
-      doc.moveDown(4);
+      doc.font('Helvetica-Bold').text('Booking Ref:', rightColX, currentY);
+      doc.font('Helvetica').text(booking.bookingNumber || 'N/A', rightValX, currentY);
+      currentY += 20;
 
-      // --- DATES ---
-      const datesY = doc.y;
-      doc.rect(40, datesY, 250, 50).fill(tw.green50);
-      doc.fillColor(tw.green600).font('Helvetica-Bold').fontSize(10).text('CHECK-IN', 50, datesY + 10);
-      doc.fillColor(tw.textDark).fontSize(12).text(new Date(booking.checkIn).toLocaleDateString(), 50, datesY + 25);
+      doc.font('Helvetica-Bold').text('Total Pax:', leftColX, currentY);
+      const paxTextSummary = `${booking.adults || 0} Adults${booking.children ? ` & ${booking.children} Children` : ''}`;
+      doc.font('Helvetica').text(paxTextSummary, leftValX, currentY);
 
-      doc.rect(305, datesY, 250, 50).fill(tw.green50);
-      doc.fillColor(tw.green600).font('Helvetica-Bold').fontSize(10).text('CHECK-OUT', 315, datesY + 10);
-      doc.fillColor(tw.textDark).fontSize(12).text(new Date(booking.checkOut).toLocaleDateString(), 315, datesY + 25);
+      doc.font('Helvetica-Bold').text('Voucher Status:', rightColX, currentY);
+      doc.font('Helvetica').text('CONFIRMED', rightValX, currentY);
+      currentY += 20;
 
-      doc.moveDown(4);
+      doc.moveTo(40, currentY).lineTo(555, currentY).strokeColor('#E5E7EB').lineWidth(0.5).stroke();
+      currentY += 20;
 
-      // --- GUEST BREAKDOWN ---
-      doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text('OCCUPANCY DETAILS', 40, doc.y);
-      doc.moveDown(0.5);
-      
-      const guestY = doc.y;
-      doc.fontSize(10).font('Helvetica').fillColor(tw.text)
-         .text(`Adults: ${booking.adults}`, 40, guestY)
-         .text(`Children: ${booking.children || 0}`, 150, guestY)
-         .text(`Rooms: ${booking.rooms || 1}`, 260, guestY)
-         .text(`Meal Plan: ${booking.mealPlan || 'N/A'}`, 370, guestY);
+      // 2. ACCOMMODATION & GUEST DETAILS (Grouped by Room)
+      doc.rect(40, currentY, 515, 20).fill('#F3F4F6');
+      doc.fillColor('#000000').font('Helvetica-Bold').text('ACCOMMODATION & GUEST ASSIGNMENT', 45, currentY + 5);
+      currentY += 30;
 
-      if (booking.roomConfigs && booking.roomConfigs.length > 0) {
-        doc.moveDown(1);
-        doc.fontSize(10).font('Helvetica-Bold').text('Room Configurations:', 40);
-        booking.roomConfigs.forEach((config, idx) => {
-          doc.fontSize(9).font('Helvetica').text(`Room ${idx + 1}: ${config.adults} Adults, ${config.children} Children ${config.childrenAges?.length > 0 ? `(Ages: ${config.childrenAges.join(', ')})` : ''}`, 50);
-        });
-      }
+      const roomData = booking.passengerDetails && booking.passengerDetails.length > 0 
+        ? booking.passengerDetails 
+        : [{ 
+            roomName: booking.roomName || 'Accommodation',
+            roomNumber: 1,
+            adults: [{ name: booking.guestName || booking.customerName }],
+            children: []
+          }];
 
-      // --- ALL PASSENGERS DETAILS ---
-      if (booking.passengerDetails && booking.passengerDetails.length > 0) {
-        checkPageBreak(50);
-        doc.moveDown(2);
-        doc.font('Helvetica-Bold').fontSize(14).fillColor(tw.textDark).text('GUEST INFORMATION', 40, doc.y);
-        doc.y += 10;
+      roomData.forEach((room, idx) => {
+        if (currentY > 700) {
+          doc.addPage();
+          doc.rect(20, 20, 555, 802).strokeColor('#000000').lineWidth(0.5).stroke();
+          currentY = 40;
+        }
 
-        booking.passengerDetails.forEach((roomDetail, roomIdx) => {
-          checkPageBreak(100);
-          doc.fillColor(tw.primary).fontSize(11).font('Helvetica-Bold').text(`ROOM ${roomDetail.roomNumber || roomIdx + 1} (${roomDetail.roomName || 'Room'})`, 40);
-          doc.moveDown(0.5);
+        // Room Header
+        doc.rect(40, currentY, 515, 18).fill('#EFF6FF');
+        doc.fillColor('#1E40AF').font('Helvetica-Bold').fontSize(10)
+           .text(`ROOM ${room.roomNumber || idx + 1}: ${room.roomName || 'Accommodation'}`, 45, currentY + 4);
+        currentY += 25;
 
-          if (roomDetail.adults && roomDetail.adults.length > 0) {
-            doc.fillColor(tw.textDark).fontSize(10).font('Helvetica-Bold').text('Adults:', 50);
-            roomDetail.adults.forEach(adult => {
-              checkPageBreak(50);
-              doc.fillColor(tw.text).fontSize(9).font('Helvetica')
-                 .text(`• ${adult.name || 'N/A'} - Passport: ${adult.passport || 'N/A'}, Country: ${adult.country || 'N/A'}`, 60);
-              if (adult.arrivalFlightNumber) {
-                doc.text(`  Arrival: ${adult.arrivalFlightNumber} at ${adult.arrivalTime || 'N/A'}`, 70);
-              }
-              if (adult.departureFlightNumber) {
-                doc.text(`  Departure: ${adult.departureFlightNumber} at ${adult.departureTime || 'N/A'}`, 70);
-              }
-              doc.moveDown(0.2);
-            });
-          }
+        // Find matching resort info if available
+        const segment = booking.savedBookings?.find(sb => sb.roomName === room.roomName) || {};
+        const resortName = segment.resortName || booking.resortName || 'N/A';
+        const checkIn = segment.checkIn || booking.checkIn;
+        const checkOut = segment.checkOut || booking.checkOut;
+        const mealPlan = segment.mealPlan || booking.mealPlan;
 
-          if (roomDetail.children && roomDetail.children.length > 0) {
-            doc.moveDown(0.5);
-            doc.fillColor(tw.textDark).fontSize(10).font('Helvetica-Bold').text('Children:', 50);
-            roomDetail.children.forEach(child => {
-              checkPageBreak(50);
-              doc.fillColor(tw.text).fontSize(9).font('Helvetica')
-                 .text(`• ${child.name || 'N/A'} - Age: ${child.age || 'N/A'}, Passport: ${child.passport || 'N/A'}, Country: ${child.country || 'N/A'}`, 60);
-              doc.moveDown(0.2);
-            });
-          }
-          doc.moveDown(1);
-        });
-      }
+        doc.fillColor('#000000').font('Helvetica-Bold').fontSize(9).text('Resort:', 50, currentY);
+        doc.font('Helvetica').text(resortName, 100, currentY);
+        
+        doc.font('Helvetica-Bold').text('Dates:', 300, currentY);
+        doc.font('Helvetica').text(`${formatShortDate(checkIn)} - ${formatShortDate(checkOut)}`, 340, currentY);
+        currentY += 15;
 
-      // --- FOOTER SECTION ---
-      if (doc.y + 100 > doc.page.height - 50) {
+        doc.font('Helvetica-Bold').text('Meal Plan:', 50, currentY);
+        doc.font('Helvetica').text(mealPlan || 'N/A', 100, currentY);
+        currentY += 20;
+
+        // Adults
+        if (room.adults && room.adults.length > 0) {
+          doc.font('Helvetica-Bold').fontSize(8).fillColor('#6B7280').text('ADULT GUESTS', 50, currentY);
+          currentY += 12;
+          
+          room.adults.forEach(adult => {
+            doc.font('Helvetica-Bold').fontSize(9).fillColor('#1F2937').text(adult.name || 'N/A', 60, currentY);
+            
+            let extra = [];
+            if (adult.passport) extra.push(`PP: ${adult.passport}`);
+            if (adult.country) extra.push(adult.country);
+            if (adult.arrivalFlightNumber) extra.push(`Arr: ${adult.arrivalFlightNumber}`);
+            
+            if (extra.length > 0) {
+              doc.font('Helvetica').fontSize(8).fillColor('#4B5563').text(extra.join(' | '), 220, currentY);
+            }
+            currentY += 14;
+          });
+        }
+
+        // Children
+        if (room.children && room.children.length > 0) {
+          currentY += 5;
+          doc.font('Helvetica-Bold').fontSize(8).fillColor('#6B7280').text('CHILD GUESTS', 50, currentY);
+          currentY += 12;
+          
+          room.children.forEach(child => {
+            doc.font('Helvetica-Bold').fontSize(9).fillColor('#1F2937').text(child.name || 'N/A', 60, currentY);
+            doc.font('Helvetica').fontSize(8).fillColor('#4B5563').text(`Age: ${child.age || 'N/A'}${child.passport ? ` | PP: ${child.passport}` : ''}`, 220, currentY);
+            currentY += 14;
+          });
+        }
+
+        currentY += 15;
+      });
+
+      // 3. Special Request & Remarks
+      if (currentY > 700) {
         doc.addPage();
-        doc.y = 40;
-      } else {
-        doc.moveDown(4);
+        doc.rect(20, 20, 555, 802).strokeColor('#000000').lineWidth(0.5).stroke();
+        currentY = 40;
       }
-      
-      const footerStartY = doc.page.height - 100;
-      
-      // Divider
-      doc.moveTo(40, footerStartY).lineTo(555, footerStartY).strokeColor(tw.border).lineWidth(1).stroke();
-      
-      // Crown Voyages Footer Details
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.primary).text('Crown Voyages', 40, footerStartY + 10, { align: 'center', width: 515 });
-      doc.fontSize(8).font('Helvetica').fillColor(tw.textLight)
-         .text('123 Luxury Ave, Suite 100, New York, NY 10001', 40, footerStartY + 25, { align: 'center', width: 515 });
-      doc.text('www.crownvoyages.com | concierge@crownvoyages.com', 40, footerStartY + 35, { align: 'center', width: 515 });
-      doc.text('Thank you for choosing us for your luxury travel needs.', 40, footerStartY + 48, { align: 'center', width: 515 });
+
+      doc.font('Helvetica-Bold').fontSize(10).fillColor('#000000').text('Special Request:', leftColX, currentY);
+      doc.font('Helvetica').text(booking.specialRequests || '-', leftValX, currentY, { width: 400 });
+      currentY += 25;
+
+      doc.font('Helvetica-Bold').text('Remarks:', leftColX, currentY);
+      doc.font('Helvetica').text(booking.remarks || '-', leftValX, currentY, { width: 400 });
+
+      // Footer
+      const footerY = 740;
+      doc.font('Helvetica-Bold').fontSize(10).fillColor('#000000').text('Authorized By:', 380, footerY);
+      doc.font('Helvetica').text('Aslam', 460, footerY);
+
+      // Logo Stamp
+      if (finalLogoPath) {
+        doc.image(finalLogoPath, 460, footerY + 20, { width: 60 });
+        doc.fontSize(8).font('Helvetica-Bold').text('CROWN VOYAGES', 460, footerY + 50);
+        doc.fontSize(6).font('Helvetica').text('PVT LOT | 02290234', 460, footerY + 60);
+      }
 
       doc.end();
     } catch (error) {
+      console.error('Error generating voucher PDF:', error);
       reject(error);
     }
   });
