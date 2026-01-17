@@ -651,14 +651,14 @@ export const getUserAnalysis = asyncHandler(async (req, res) => {
 // Helper function to get color for status
 const getStatusColor = (status) => {
   const colors = {
-    'New': '#3B82F6',
-    'Pending': '#F59E0B',
-    'Quotation': '#8B5CF6',
-    'Invoice': '#EC4899',
-    'Receipt': '#10B981',
-    'Confirmed': '#10B981',
-    'Cancelled': '#EF4444',
-    'Converted': '#D4AF37'
+    'New': '#3B82F6',       // Blue
+    'Pending': '#F59E0B',   // Yellow
+    'Quotation': '#8B5CF6', // Purple
+    'Invoice': '#F59E0B',   // Yellow
+    'Receipt': '#EC4899',   // Pink
+    'Confirmed': '#10B981', // Green
+    'Cancelled': '#EF4444', // Red
+    'Converted': '#D4AF37'  // Gold
   };
   return colors[status] || '#6B7280';
 };
