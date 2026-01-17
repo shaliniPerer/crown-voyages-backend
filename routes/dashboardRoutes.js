@@ -9,7 +9,8 @@ import {
   getVoucherTrends,
   getResortAnalysis,
   getRoomAnalysis,
-  getUserAnalysis
+  getUserAnalysis,
+  getOperationalTrends
 } from '../controllers/dashboardController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -28,5 +29,6 @@ router.get('/voucher-trends', getVoucherTrends);
 router.get('/resort-analysis', getResortAnalysis);
 router.get('/room-analysis', getRoomAnalysis);
 router.get('/user-analysis', getUserAnalysis);
+router.get('/operational-trends', getOperationalTrends);
 
 export default router;

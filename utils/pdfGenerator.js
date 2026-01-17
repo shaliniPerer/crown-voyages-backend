@@ -1333,12 +1333,31 @@ export const generateReportPDF = async (title, data, options = {}) => {
         bg: '#F9FAFB'
       };
 
-      // Header
-      doc.fontSize(24).font('Helvetica-Bold').fillColor(tw.primary).text('CROWN VOYAGES', 40, 40);
+      // Header with Logo
+      let startY = 40;
+      try {
+        const logoPaths = [
+          path.join(process.cwd(), 'client', 'src', 'assets', 'report_logo.png'),
+          path.join(process.cwd(), '..', 'client', 'src', 'assets', 'report_logo.png'),
+          path.join(process.cwd(), 'server', 'uploads', 'logo.png'),
+          path.join(process.cwd(), 'uploads', 'logo.png')
+        ];
+        let logoPath = null;
+        for (const p of logoPaths) {
+          if (fs.existsSync(p)) { logoPath = p; break; }
+        }
+        if (logoPath) {
+          doc.image(logoPath, 40, 30, { width: 120 });
+          startY = 90; // Move content down after logo
+        }
+      } catch (e) {
+        console.log('Logo not found, skipping');
+      }
     
 
       // Report Title
-      doc.moveDown(2);
+      doc.y = startY;
+      doc.moveDown(1);
       doc.fontSize(18).font('Helvetica-Bold').fillColor(tw.text).text(title.toUpperCase(), 40, doc.y, { align: 'center' });
       doc.fontSize(10).font('Helvetica').fillColor(tw.textLight).text(`Generated: ${new Date().toLocaleDateString()} | Period: ${options.period || 'All Time'}`, { align: 'center' });
       
@@ -1349,34 +1368,41 @@ export const generateReportPDF = async (title, data, options = {}) => {
       let colWidths = [100, 150, 100, 100, 80]; 
 
       const isDetailedReport = title.toLowerCase().includes('resort') || title.toLowerCase().includes('room') || title.toLowerCase().includes('user');
-      const isOperationalReport = title.toLowerCase().includes('operational');
+      const isOperationalReport = title.toLowerCase().includes('operational') || title.toLowerCase().includes('booking distribution');
+      const isBookingStatusReport = title.toLowerCase().includes('booking status');
 
-      if (isDetailedReport) {
+      if (isBookingStatusReport) {
+        headers = ['Booking ID', 'Name', 'Check-In', 'Check-Out', 'Resort'];
+        colWidths = [110, 150, 90, 90, 130]; // Total 570
+      } else if (isDetailedReport) {
         let firstCol = 'Name';
         if (title.toLowerCase().includes('room')) firstCol = 'Room (Resort)';
         else if (title.toLowerCase().includes('resort')) firstCol = 'Resort';
-        else if (title.toLowerCase().includes('user')) firstCol = 'Consultant';
+        else if (title.toLowerCase().includes('user')) firstCol = 'Booking #';
 
         headers = [firstCol, 'Date', 'Customer', 'Full Amt', 'Paid', 'Balance'];
         colWidths = [100, 60, 115, 80, 80, 80]; // Total 515
       } else if (isOperationalReport) {
-        headers = ['Type', 'ID', 'Customer', 'Date', 'Amount', 'Status'];
-        colWidths = [60, 80, 145, 70, 80, 80];
+        headers = ['Booking #', 'Customer', 'Check-In', 'Check-Out', 'Resort'];
+        colWidths = [100, 140, 80, 80, 115]; // Total 515
       }
       
       const startX = 40;
       const tableTop = doc.y;
       let y = tableTop;
+      
+      // Calculate total table width
+      const tableWidth = colWidths.reduce((sum, width) => sum + width, 0);
 
       const drawRow = (row, y, isHeader = false) => {
         const bg = isHeader ? tw.primary : (isHeader ? tw.primary : (Math.floor(y / 25) % 2 === 0 ? tw.bg : '#FFF')); // Simple zebra striping
         if (isHeader) {
-          doc.rect(startX, y - 5, 515, 20).fill(tw.primary);
+          doc.rect(startX, y - 5, tableWidth, 20).fill(tw.primary);
           doc.fillColor('#FFF').font('Helvetica-Bold').fontSize(10);
         } else {
           doc.fillColor(tw.text).font('Helvetica').fontSize(9);
           // Just a light border for rows
-          doc.lineWidth(0.5).strokeColor(tw.border).rect(startX, y - 5, 515, 20).stroke();
+          doc.lineWidth(0.5).strokeColor(tw.border).rect(startX, y - 5, tableWidth, 20).stroke();
         }
 
         let x = startX + 5;
@@ -1388,7 +1414,15 @@ export const generateReportPDF = async (title, data, options = {}) => {
       };
 
       const mapItemToRow = (item) => {
-        if (title.toLowerCase().includes('quotation')) {
+        if (isBookingStatusReport) {
+           return [
+             item.bookingId || '-',
+             item.customerName || 'Unknown',
+             item.checkIn ? new Date(item.checkIn).toLocaleDateString() : '-',
+             item.checkOut ? new Date(item.checkOut).toLocaleDateString() : '-',
+             item.resortName || '-'
+           ];
+        } else if (title.toLowerCase().includes('quotation')) {
            return [
              item.quotationNumber || item.id || '-',
              item.customerName || item.customer || 'Unknown',
@@ -1414,7 +1448,7 @@ export const generateReportPDF = async (title, data, options = {}) => {
            ];
         } else if (isDetailedReport) {
            return [
-             item.resortName || item.roomName || item.userName || 'Unknown',
+             item.resortName || item.roomName || item.userName || item.bookingNumber || 'Unknown',
              item.date ? new Date(item.date).toLocaleDateString() : '-',
              item.customerName || 'Unknown',
              `$${(item.fullAmount || 0).toLocaleString()}`,
@@ -1423,12 +1457,11 @@ export const generateReportPDF = async (title, data, options = {}) => {
            ];
         } else if (isOperationalReport) {
            return [
-             item.type || 'N/A',
-             item.id || 'N/A',
-             item.customer || 'Unknown',
-             item.date ? new Date(item.date).toLocaleDateString() : '-',
-             item.amount > 0 ? `$${item.amount.toLocaleString()}` : '-',
-             item.status || 'N/A'
+             item.bookingNumber || item.id || 'N/A',
+             item.customerName || item.customer || 'Unknown',
+             item.checkIn ? new Date(item.checkIn).toLocaleDateString() : '-',
+             item.checkOut ? new Date(item.checkOut).toLocaleDateString() : '-',
+             item.resortName || '-'
            ];
         } else {
              return Object.values(item).slice(0, 5).map(v => String(v));
@@ -1456,54 +1489,81 @@ export const generateReportPDF = async (title, data, options = {}) => {
       };
 
       if (!Array.isArray(data)) {
-        // Grouped format: { "Group Name": [items] }
+        // Grouped format: { "Group Name": [items] } or { "User Name": { receipts: [], confirmed: [] } }
         for (const [groupName, groupItems] of Object.entries(data)) {
-          if (!groupItems || groupItems.length === 0) continue;
+          if (!groupItems) continue;
+          
+          // Check if it's user performance format (has receipts/confirmed sub-groups)
+          if (groupItems.receipts !== undefined || groupItems.confirmed !== undefined) {
+            // User Performance Report Format
+            if (y > doc.page.height - 100) {
+              doc.addPage();
+              y = 50;
+            } else if (y > tableTop) {
+              y += 20;
+            }
 
-          if (y > doc.page.height - 100) {
-            doc.addPage();
-            y = 50;
-          } else if (y > tableTop) {
+            doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.primary).text(groupName.toUpperCase(), startX, y);
             y += 15;
-          }
+            
+            // Receipts Section
+            if (groupItems.receipts && groupItems.receipts.length > 0) {
+              doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.text).text('  RECEIPTS:', startX, y);
+              y += 15;
+              processDataArray(groupItems.receipts, true);
+              y += 10;
+            }
+            
+            // Confirmed Section
+            if (groupItems.confirmed && groupItems.confirmed.length > 0) {
+              doc.fontSize(10).font('Helvetica-Bold').fillColor(tw.text).text('  CONFIRMED:', startX, y);
+              y += 15;
+              processDataArray(groupItems.confirmed, true);
+              y += 10;
+            }
+            
+            // Calculate totals for this user
+            const allItems = [...(groupItems.receipts || []), ...(groupItems.confirmed || [])];
+            const totalFull = allItems.reduce((sum, item) => sum + (item.fullAmount || 0), 0);
+            const totalPaid = allItems.reduce((sum, item) => sum + (item.paidAmount || 0), 0);
+            const totalBalance = allItems.reduce((sum, item) => sum + (item.balance || 0), 0);
+            
+            doc.fontSize(9).font('Helvetica-Bold').fillColor(tw.textLight)
+              .text(`  Subtotal - Full: $${totalFull.toLocaleString()} | Paid: $${totalPaid.toLocaleString()} | Balance: $${totalBalance.toLocaleString()}`, startX, y);
+            y += 20;
+          } else if (Array.isArray(groupItems)) {
+            // Standard grouped format (for operational/booking distribution reports)
+            if (groupItems.length === 0) continue;
 
-          doc.fontSize(11).font('Helvetica-Bold').fillColor(tw.primary).text(groupName.toUpperCase(), startX, y);
-          y += 15;
-          processDataArray(groupItems, true);
+            if (y > doc.page.height - 100) {
+              doc.addPage();
+              y = 50;
+            } else if (y > tableTop) {
+              y += 20;
+            }
+
+            doc.fontSize(11).font('Helvetica-Bold').fillColor(tw.primary).text(groupName.toUpperCase(), startX, y);
+            y += 15;
+            processDataArray(groupItems, true);
+            y += 15;
+            
+            // Skip subtotal for booking status reports
+            if (!isBookingStatusReport) {
+              const totalFull = groupItems.reduce((sum, item) => sum + (item.fullAmount || 0), 0);
+              const totalPaid = groupItems.reduce((sum, item) => sum + (item.paidAmount || 0), 0);
+              const totalBalance = groupItems.reduce((sum, item) => sum + (item.balance || 0), 0);
+              
+              doc.fontSize(9).font('Helvetica-Bold').fillColor(tw.textLight)
+                .text(`  Subtotal - Full: $${totalFull.toLocaleString()} | Paid: $${totalPaid.toLocaleString()} | Balance: $${totalBalance.toLocaleString()}`, startX, y);
+              y += 20;
+            }
+          }
         }
       } else {
         processDataArray(data, true);
       }
 
-      // Summary
-      doc.moveDown(2);
-      if (y > doc.page.height - 100) {
-        doc.addPage();
-        y = 50;
-      } else {
-        y += 20;
-      }
-
-      const isDetailed = title.toLowerCase().includes('resort') || title.toLowerCase().includes('room');
-      
-      let allItems = Array.isArray(data) ? data : Object.values(data).flat();
-      
-      const totalAmount = allItems.reduce((sum, item) => sum + (item.finalAmount || item.amount || item.fullAmount || 0), 0);
-      const totalPaid = allItems.reduce((sum, item) => sum + (item.paidAmount || 0), 0);
-      const totalBalance = allItems.reduce((sum, item) => sum + (item.balance || 0), 0);
-
-      doc.fontSize(12).font('Helvetica-Bold').fillColor(tw.text).text(`Total Records: ${allItems.length}`, 40, y);
-      y += 15;
-      
-      if (isDetailed) {
-        doc.text(`Total Full Value: $${totalAmount.toLocaleString()}`, 40, y);
-        y += 15;
-        doc.text(`Total Paid: $${totalPaid.toLocaleString()}`, 40, y);
-        y += 15;
-        doc.text(`Total Balance: $${totalBalance.toLocaleString()}`, 40, y);
-      } else {
-        doc.text(`Total Value: $${totalAmount.toLocaleString()}`, 40, y);
-      }
+      // Summary section removed as per user request
 
       doc.end();
     } catch (error) {

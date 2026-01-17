@@ -15,59 +15,72 @@ export const getMetrics = asyncHandler(async (req, res) => {
   const today = new Date();
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  // Use simple queries where possible, aggregations only for sums
+  // Get leads (booking page data) and billing data linked by lead ID
   const [
-    totalBookings,
-    totalGuestsRes,
-    totalQuotationRes,
+    totalLeads,
+    totalGuestsFromLeads,
     totalInvoiceRes,
     totalReceiptRes,
     outstandingRes,
     paidInvoicesRes,
     monthlyLeads,
-    monthlyQuotes,
-    monthlyInvoices,
-    monthlyBookings,
-    monthlyRevenueRes,
-    activeGuests
+    leadsWithInvoiceStatus,
+    leadsWithReceiptStatus
   ] = await Promise.all([
-    Booking.countDocuments({ status: { $ne: 'Cancelled' } }),
-    Booking.aggregate([{ $match: { status: { $ne: 'Cancelled' } } }, { $group: { _id: null, total: { $sum: { $add: [{ $ifNull: ["$adults", 0] }, { $ifNull: ["$children", 0] }] } } } }]),
-    Quotation.aggregate([{ $group: { _id: null, total: { $sum: { $ifNull: ['$finalAmount', 0] } }, count: { $sum: 1 } } }]),
-    Invoice.aggregate([{ $match: { status: { $ne: 'Cancelled' } } }, { $group: { _id: null, total: { $sum: { $ifNull: ['$finalAmount', 0] } }, count: { $sum: 1 } } }]),
-    Receipt.aggregate([{ $group: { _id: null, total: { $sum: { $ifNull: ['$finalAmount', 0] } }, count: { $sum: 1 } } }]),
-    Invoice.aggregate([{ $match: { status: { $in: ['Pending', 'Partial', 'Overdue'] } } }, { $group: { _id: null, total: { $sum: { $ifNull: ['$balance', 0] } } } }]),
-    Invoice.aggregate([{ $match: { status: 'Paid' } }, { $group: { _id: null, total: { $sum: { $ifNull: ['$finalAmount', 0] } }, count: { $sum: 1 } } }]),
+    Lead.countDocuments({ status: { $nin: ['Cancelled'] } }),
+    Lead.aggregate([
+      { $match: { status: { $nin: ['Cancelled'] } } }, 
+      { $group: { _id: null, total: { $sum: { $add: [{ $ifNull: ["$adults", 0] }, { $ifNull: ["$children", 0] }] } } } }
+    ]),
+    // Get invoices from billing page linked to leads
+    Invoice.aggregate([
+      { $match: { status: { $ne: 'Cancelled' } } }, 
+      { $group: { _id: null, total: { $sum: { $ifNull: ['$finalAmount', 0] } }, count: { $sum: 1 } } }
+    ]),
+    // Get receipts from billing page
+    Receipt.aggregate([
+      { $group: { _id: null, total: { $sum: { $ifNull: ['$amount', 0] } }, count: { $sum: 1 } } }
+    ]),
+    // Outstanding balances from invoices in billing page
+    Invoice.aggregate([
+      { $match: { status: { $in: ['Pending', 'Partial', 'Overdue'] } } }, 
+      { $group: { _id: null, total: { $sum: { $ifNull: ['$balance', 0] } } } }
+    ]),
+    // Paid invoices from billing page
+    Invoice.aggregate([
+      { $match: { status: 'Paid' } }, 
+      { $group: { _id: null, total: { $sum: { $ifNull: ['$finalAmount', 0] } }, count: { $sum: 1 } } }
+    ]),
+    // Monthly leads from booking page
     Lead.countDocuments({ createdAt: { $gte: startOfMonth }, status: { $nin: ['Converted', 'Cancelled'] } }),
-    Quotation.countDocuments({ createdAt: { $gte: startOfMonth }, status: { $nin: ['Accepted', 'Cancelled'] } }),
-    Invoice.countDocuments({ createdAt: { $gte: startOfMonth }, status: { $nin: ['Paid', 'Cancelled'] } }),
-    Booking.countDocuments({ createdAt: { $gte: startOfMonth }, status: { $ne: 'Cancelled' } }),
-    Receipt.aggregate([{ $match: { createdAt: { $gte: startOfMonth } } }, { $group: { _id: null, total: { $sum: { $ifNull: ['$finalAmount', 0] } } } }]),
-    Booking.countDocuments({ status: 'Checked-in' })
+    // Leads with Invoice status (for monthly invoices count)
+    Lead.countDocuments({ createdAt: { $gte: startOfMonth }, status: 'Invoice' }),
+    // Leads with Receipt status (active guests with receipts)
+    Lead.countDocuments({ status: 'Receipt' })
   ]);
 
   res.json({
     success: true,
     data: {
-      totalBookings,
-      totalGuests: totalGuestsRes[0]?.total || 0,
+      totalBookings: totalLeads,
+      totalGuests: totalGuestsFromLeads[0]?.total || 0,
       totalRevenue: totalReceiptRes[0]?.total || 0,
-      totalQuotationValue: totalQuotationRes[0]?.total || 0,
-      totalQuotationCount: totalQuotationRes[0]?.count || 0,
+      totalQuotationValue: 0,
+      totalQuotationCount: 0,
       totalInvoiceValue: totalInvoiceRes[0]?.total || 0,
       totalInvoiceCount: totalInvoiceRes[0]?.count || 0,
       totalReceiptValue: totalReceiptRes[0]?.total || 0,
       totalReceiptCount: totalReceiptRes[0]?.count || 0,
       outstandingPayments: outstandingRes[0]?.total || 0,
-      activeGuests,
+      activeGuests: leadsWithReceiptStatus,
       paidInvoicesCount: paidInvoicesRes[0]?.count || 0,
       paidInvoicesValue: paidInvoicesRes[0]?.total || 0,
       monthly: {
-        bookings: monthlyBookings,
+        bookings: monthlyLeads,
         leads: monthlyLeads,
-        quotations: monthlyQuotes,
-        invoices: monthlyInvoices,
-        revenue: monthlyRevenueRes[0]?.total || 0
+        quotations: 0,
+        invoices: leadsWithInvoiceStatus,
+        revenue: totalReceiptRes[0]?.total || 0
       }
     }
   });
@@ -592,39 +605,26 @@ export const getUserAnalysis = asyncHandler(async (req, res) => {
     default: startDate = new Date(now.setMonth(now.getMonth() - 1));
   }
 
-  // Aggregate unique bookings that received payments, grouped by the user who created the lead/booking
-  const userStats = await Receipt.aggregate([
-    { $match: { createdAt: { $gte: startDate } } },
-    {
-      $project: {
-        refId: { $ifNull: ['$lead', '$booking', '$invoice'] }
-      }
+  // Get Leads with "Receipt" or "Confirmed" status
+  const userStats = await Lead.aggregate([
+    { 
+      $match: { 
+        status: { $in: ['Receipt', 'Confirmed'] },
+        createdAt: { $gte: startDate }
+      } 
     },
-    { $match: { refId: { $ne: null } } },
-    { $group: { _id: '$refId' } },
-    { $lookup: { from: 'leads', localField: '_id', foreignField: '_id', as: 'l' } },
-    { $lookup: { from: 'bookings', localField: '_id', foreignField: '_id', as: 'b' } },
-    {
-      $project: {
-        info: { $ifNull: [{ $arrayElemAt: ['$l', 0] }, { $arrayElemAt: ['$b', 0] }] }
-      }
-    },
-    { $match: { info: { $ne: null } } },
     {
       $group: {
-        _id: '$info.createdBy',
-        conversions: { $sum: 1 },
-        totalValue: { $sum: { $ifNull: ['$info.totalAmount', 0] } },
-        totalPaid: { $sum: { $ifNull: ['$info.paidAmount', 0] } },
-        fullyPaidCount: { 
-          $sum: { 
-            $cond: [
-              { $lte: [{ $ifNull: ['$info.balance', 999999] }, 0] }, 
-              1, 
-              0 
-            ] 
-          } 
-        }
+        _id: '$createdBy',
+        receiptsCount: { 
+          $sum: { $cond: [{ $eq: ['$status', 'Receipt'] }, 1, 0] } 
+        },
+        confirmedCount: { 
+          $sum: { $cond: [{ $eq: ['$status', 'Confirmed'] }, 1, 0] } 
+        },
+        fullAmount: { $sum: { $ifNull: ['$totalAmount', 0] } },
+        paidAmount: { $sum: { $ifNull: ['$paidAmount', 0] } },
+        balance: { $sum: { $ifNull: ['$balance', 0] } }
       }
     },
     { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
@@ -633,13 +633,14 @@ export const getUserAnalysis = asyncHandler(async (req, res) => {
       $project: {
         name: '$user.name',
         role: '$user.role',
-        conversions: 1,
-        fullyPaid: '$fullyPaidCount',
-        totalValue: 1,
-        totalPaid: 1
+        receiptsCount: 1,
+        confirmedCount: 1,
+        fullAmount: 1,
+        paidAmount: 1,
+        balance: 1
       }
     },
-    { $sort: { conversions: -1 } }
+    { $sort: { paidAmount: -1 } }
   ]);
 
   res.json({
@@ -662,3 +663,92 @@ const getStatusColor = (status) => {
   };
   return colors[status] || '#6B7280';
 };
+
+// @desc    Get operational trends (Booking Distribution)
+// @route   GET /api/dashboard/operational-trends
+// @access  Private
+export const getOperationalTrends = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const today = new Date(now.setHours(0, 0, 0, 0));
+  const endDate = new Date(new Date().setFullYear(new Date().getFullYear() + 2));
+  
+  // Get leads by check-in date and status (future check-ins only)
+  const leadsByDate = await Lead.aggregate([
+    { $match: { checkIn: { $gte: today, $lte: endDate }, status: { $in: ['New', 'Quotation', 'Invoice'] } } },
+    {
+      $group: {
+        _id: {
+          date: { $dateToString: { format: '%Y-%m-%d', date: '$checkIn' } },
+          status: '$status'
+        },
+        count: { $sum: 1 }
+      }
+    },
+    { $sort: { '_id.date': 1 } },
+    { $limit: 30 } // Limit to next 30 unique check-in dates
+  ]);
+
+  // Get invoices with amounts by check-in date (future check-ins only)
+  const invoicesByDate = await Invoice.aggregate([
+    { $lookup: { from: 'leads', localField: 'lead', foreignField: '_id', as: 'leadInfo' } },
+    { $unwind: { path: '$leadInfo', preserveNullAndEmptyArrays: true } },
+    { $match: { 'leadInfo.checkIn': { $gte: today, $lte: endDate } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$leadInfo.checkIn' } },
+        total: { $sum: '$finalAmount' },
+        count: { $sum: 1 }
+      }
+    },
+    { $sort: { _id: 1 } },
+    { $limit: 30 }
+  ]);
+
+  // Create a map for invoice amounts
+  const invoiceMap = new Map(invoicesByDate.map(inv => [inv._id, { total: inv.total, count: inv.count }]));
+
+  // Build result structure
+  const dataMap = new Map();
+  
+  leadsByDate.forEach(item => {
+    const date = item._id.date;
+    if (!dataMap.has(date)) {
+      dataMap.set(date, { 
+        name: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), 
+        fullDate: date,
+        leadCount: 0, 
+        quotationCount: 0, 
+        invoiceCount: 0,
+        invoice: 0
+      });
+    }
+    const data = dataMap.get(date);
+    if (item._id.status === 'New') data.leadCount = item.count;
+    if (item._id.status === 'Quotation') data.quotationCount = item.count;
+    if (item._id.status === 'Invoice') data.invoiceCount = item.count;
+  });
+
+  // Add invoice amounts
+  invoiceMap.forEach((value, date) => {
+    if (!dataMap.has(date)) {
+      dataMap.set(date, { 
+        name: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        fullDate: date,
+        leadCount: 0, 
+        quotationCount: 0, 
+        invoiceCount: value.count,
+        invoice: value.total
+      });
+    } else {
+      const data = dataMap.get(date);
+      data.invoice = value.total;
+    }
+  });
+
+  const result = Array.from(dataMap.values()).sort((a, b) => a.fullDate.localeCompare(b.fullDate));
+
+  res.json({
+    success: true,
+    data: result
+  });
+});

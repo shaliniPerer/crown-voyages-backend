@@ -385,9 +385,118 @@ export const exportToPDF = asyncHandler(async (req, res) => {
 
   switch (type) {
     case 'booking':
-      const bookingReport = await getBookingReports(req, { json: () => {} });
-      reportData = bookingReport;
-      reportTitle = 'Booking Report';
+      // Calculate booking report with date range support
+      const bookingNow = new Date();
+      let bookingStart, bookingEnd;
+      
+      // Handle custom date ranges
+      if (req.query.startDate && req.query.endDate) {
+        bookingStart = new Date(req.query.startDate);
+        bookingEnd = new Date(req.query.endDate);
+        bookingEnd.setHours(23, 59, 59, 999);
+      } else if (req.query.week) {
+        const [year, week] = req.query.week.split('-W');
+        bookingStart = new Date(year, 0, 1 + (week - 1) * 7);
+        bookingEnd = new Date(bookingStart);
+        bookingEnd.setDate(bookingEnd.getDate() + 6);
+        bookingEnd.setHours(23, 59, 59, 999);
+      } else if (req.query.month) {
+        const [year, month] = req.query.month.split('-');
+        bookingStart = new Date(year, month - 1, 1);
+        bookingEnd = new Date(year, month, 0, 23, 59, 59, 999);
+      } else if (req.query.year) {
+        bookingStart = new Date(req.query.year, 0, 1);
+        bookingEnd = new Date(req.query.year, 11, 31, 23, 59, 59, 999);
+      } else {
+        switch (period) {
+          case 'daily': bookingStart = new Date(bookingNow.setHours(0,0,0,0)); break;
+          case 'weekly': bookingStart = new Date(bookingNow.setDate(bookingNow.getDate() - 7)); break;
+          case 'monthly': bookingStart = new Date(bookingNow.setMonth(bookingNow.getMonth() - 1)); break;
+          case 'annually': bookingStart = new Date(bookingNow.setFullYear(bookingNow.getFullYear() - 1)); break;
+          case 'all': bookingStart = new Date(0); break;
+          default: bookingStart = new Date(bookingNow.setMonth(bookingNow.getMonth() - 1));
+        }
+        bookingEnd = new Date();
+      }
+
+      const bookingFilter = { createdAt: { $gte: bookingStart, $lte: bookingEnd } };
+
+      // Get leads with different statuses and populate necessary fields
+      const [newLeads, quotationLeads, invoiceLeads, receiptLeads, confirmedLeads] = await Promise.all([
+        Lead.find({ ...bookingFilter, status: 'New' })
+          .populate('booking', 'bookingNumber checkIn checkOut')
+          .populate('resort', 'name')
+          .populate('room', 'name')
+          .lean(),
+        Lead.find({ ...bookingFilter, status: 'Quotation' })
+          .populate('booking', 'bookingNumber checkIn checkOut')
+          .populate('resort', 'name')
+          .populate('room', 'name')
+          .lean(),
+        Lead.find({ ...bookingFilter, status: 'Invoice' })
+          .populate('booking', 'bookingNumber checkIn checkOut')
+          .populate('resort', 'name')
+          .populate('room', 'name')
+          .lean(),
+        Lead.find({ ...bookingFilter, status: 'Receipt' })
+          .populate('booking', 'bookingNumber checkIn checkOut')
+          .populate('resort', 'name')
+          .populate('room', 'name')
+          .lean(),
+        Lead.find({ ...bookingFilter, status: 'Confirmed' })
+          .populate('booking', 'bookingNumber checkIn checkOut')
+          .populate('resort', 'name')
+          .populate('room', 'name')
+          .lean()
+      ]);
+
+      // Get quotations and invoices for relevant leads
+      const allLeadIds = [...quotationLeads.map(l => l._id), ...invoiceLeads.map(l => l._id)];
+      const [quotations, invoices] = await Promise.all([
+        Quotation.find({ lead: { $in: quotationLeads.map(l => l._id) } }).select('lead quotationNumber').lean(),
+        Invoice.find({ lead: { $in: invoiceLeads.map(l => l._id) } }).select('lead invoiceNumber').lean()
+      ]);
+
+      // Create maps for quick lookup
+      const quotationMap = new Map(quotations.map(q => [q.lead.toString(), q.quotationNumber]));
+      const invoiceMap = new Map(invoices.map(i => [i.lead.toString(), i.invoiceNumber]));
+
+      // Format data by status
+      const formatLeadData = (lead, statusType) => {
+        let relevantId = lead.leadNumber;
+        if (statusType === 'Quotation') {
+          relevantId = quotationMap.get(lead._id.toString()) || lead.leadNumber;
+        } else if (statusType === 'Invoice') {
+          relevantId = invoiceMap.get(lead._id.toString()) || lead.leadNumber;
+        } else if (statusType === 'Receipt') {
+          relevantId = lead.leadNumber;
+        } else if (statusType === 'Confirmed' && lead.booking) {
+          relevantId = lead.booking.bookingNumber;
+        }
+
+        return {
+          bookingId: lead.booking?.bookingNumber || lead.leadNumber,
+          relevantId: relevantId,
+          customerName: lead.guestName,
+          checkIn: lead.checkIn || lead.booking?.checkIn,
+          checkOut: lead.checkOut || lead.booking?.checkOut,
+          resortName: lead.resort?.name || '-',
+          roomName: lead.room?.name || '-',
+          fullAmount: statusType !== 'New' ? (lead.totalAmount || 0) : 0,
+          paidAmount: statusType !== 'New' ? (lead.paidAmount || 0) : 0,
+          balance: statusType !== 'New' ? (lead.balance || 0) : 0
+        };
+      };
+
+      reportData = {
+        'New': newLeads.map(lead => formatLeadData(lead, 'New')),
+        'Quotation': quotationLeads.map(lead => formatLeadData(lead, 'Quotation')),
+        'Invoice': invoiceLeads.map(lead => formatLeadData(lead, 'Invoice')),
+        'Receipts': receiptLeads.map(lead => formatLeadData(lead, 'Receipt')),
+        'Confirmed': confirmedLeads.map(lead => formatLeadData(lead, 'Confirmed'))
+      };
+
+      reportTitle = 'Booking Status Report';
       break;
     case 'revenue':
       const revenueReport = await getRevenueReports(req, { json: () => {} });
@@ -560,123 +669,175 @@ export const exportToPDF = asyncHandler(async (req, res) => {
       break;
 
     case 'user-performance':
-      // Calculate detailed user performance report
+      // Calculate detailed user performance report (Receipt and Confirmed Leads)
       const userNow = new Date();
-      let userStart;
-      switch (period) {
-        case 'daily': userStart = new Date(userNow.setHours(0,0,0,0)); break;
-        case 'weekly': userStart = new Date(userNow.setDate(userNow.getDate() - 7)); break;
-        case 'monthly': userStart = new Date(userNow.setMonth(userNow.getMonth() - 1)); break;
-        case 'annually': userStart = new Date(userNow.setFullYear(userNow.getFullYear() - 1)); break;
-        case 'all': userStart = new Date(0); break;
-        default: userStart = new Date(userNow.setMonth(userNow.getMonth() - 1));
+      let userStart, userEnd;
+      
+      // Handle custom date ranges
+      if (req.query.startDate && req.query.endDate) {
+        userStart = new Date(req.query.startDate);
+        userEnd = new Date(req.query.endDate);
+        userEnd.setHours(23, 59, 59, 999);
+      } else if (req.query.week) {
+        // Week format: "2026-W03"
+        const [year, week] = req.query.week.split('-W');
+        userStart = new Date(year, 0, 1 + (week - 1) * 7);
+        userEnd = new Date(userStart);
+        userEnd.setDate(userEnd.getDate() + 6);
+        userEnd.setHours(23, 59, 59, 999);
+      } else if (req.query.month) {
+        // Month format: "2026-01"
+        const [year, month] = req.query.month.split('-');
+        userStart = new Date(year, month - 1, 1);
+        userEnd = new Date(year, month, 0, 23, 59, 59, 999);
+      } else if (req.query.year) {
+        userStart = new Date(req.query.year, 0, 1);
+        userEnd = new Date(req.query.year, 11, 31, 23, 59, 59, 999);
+      } else {
+        // Default period handling
+        switch (period) {
+          case 'daily': userStart = new Date(userNow.setHours(0,0,0,0)); break;
+          case 'weekly': userStart = new Date(userNow.setDate(userNow.getDate() - 7)); break;
+          case 'monthly': userStart = new Date(userNow.setMonth(userNow.getMonth() - 1)); break;
+          case 'annually': userStart = new Date(userNow.setFullYear(userNow.getFullYear() - 1)); break;
+          case 'all': userStart = new Date(0); break;
+          default: userStart = new Date(userNow.setMonth(userNow.getMonth() - 1));
+        }
+        userEnd = new Date();
       }
-      const userFilter = { createdAt: { $gte: userStart } };
 
-      const userDetailedData = await Receipt.aggregate([
-        { $match: userFilter },
-        { 
-          $project: { 
-            refId: { $ifNull: ['$lead', '$booking', '$invoice'] } 
-          } 
-        },
-        { $group: { _id: '$refId' } }, 
-        { $lookup: { from: 'leads', localField: '_id', foreignField: '_id', as: 'leadInfo' } },
-        { $lookup: { from: 'bookings', localField: '_id', foreignField: '_id', as: 'bookingInfo' } },
-        { $lookup: { from: 'invoices', localField: '_id', foreignField: '_id', as: 'invoiceInfo' } },
-        {
-          $project: {
-            baseInfo: { 
-              $ifNull: [
-                { $arrayElemAt: ['$leadInfo', 0] }, 
-                { $arrayElemAt: ['$bookingInfo', 0] },
-                { $arrayElemAt: ['$invoiceInfo', 0] }
-              ] 
-            }
-          }
-        },
-        { $match: { baseInfo: { $ne: null } } },
-        { $lookup: { from: 'users', localField: 'baseInfo.createdBy', foreignField: '_id', as: 'user' } },
-        { $unwind: '$user' },
-        { 
-          $project: {
-            userName: '$user.name',
-            customerName: '$baseInfo.guestName',
-            date: '$baseInfo.createdAt',
-            fullAmount: '$baseInfo.totalAmount',
-            paidAmount: '$baseInfo.paidAmount',
-            balance: '$baseInfo.balance'
-          }
-        },
-        { $sort: { userName: 1, date: -1 } }
-      ]);
+      // Get Leads with Receipt or Confirmed status
+      const userLeads = await Lead.find({
+        status: { $in: ['Receipt', 'Confirmed'] },
+        createdAt: { $gte: userStart, $lte: userEnd }
+      }).populate('createdBy', 'name role').lean();
 
-      reportData = userDetailedData;
+      // Group by user, then separate by status
+      const userGroups = {};
+      userLeads.forEach(lead => {
+        const userName = lead.createdBy?.name || 'Unknown';
+        const userRole = lead.createdBy?.role || 'N/A';
+        const userKey = `${userName} (${userRole})`;
+        
+        if (!userGroups[userKey]) {
+          userGroups[userKey] = { receipts: [], confirmed: [] };
+        }
+        
+        const leadData = {
+          customerName: lead.guestName,
+          bookingNumber: lead.leadNumber,
+          date: lead.createdAt,
+          fullAmount: lead.totalAmount || 0,
+          paidAmount: lead.paidAmount || 0,
+          balance: lead.balance || 0
+        };
+        
+        if (lead.status === 'Receipt') {
+          userGroups[userKey].receipts.push(leadData);
+        } else if (lead.status === 'Confirmed') {
+          userGroups[userKey].confirmed.push(leadData);
+        }
+      });
+
+      // Format for PDF generation
+      reportData = userGroups;
       reportTitle = 'User Performance Detail Report';
       break;
 
     case 'operational-trends':
       const opNow = new Date();
-      let opStart;
-      switch (period) {
-        case 'daily': opStart = new Date(opNow.setHours(0,0,0,0)); break;
-        case 'weekly': opStart = new Date(opNow.setDate(opNow.getDate() - 7)); break;
-        case 'monthly': opStart = new Date(opNow.setMonth(now.getMonth() - 1)); break;
-        case 'annually': opStart = new Date(opNow.setFullYear(opNow.getFullYear() - 1)); break;
-        case 'all': opStart = new Date(0); break;
-        default: opStart = new Date(opNow.setHours(0,0,0,0));
+      let opStart, opEnd;
+      
+      // Handle custom date ranges
+      if (req.query.startDate && req.query.endDate) {
+        opStart = new Date(req.query.startDate);
+        opEnd = new Date(req.query.endDate);
+        opEnd.setHours(23, 59, 59, 999);
+      } else if (req.query.week) {
+        const [year, week] = req.query.week.split('-W');
+        opStart = new Date(year, 0, 1 + (week - 1) * 7);
+        opEnd = new Date(opStart);
+        opEnd.setDate(opEnd.getDate() + 6);
+        opEnd.setHours(23, 59, 59, 999);
+      } else if (req.query.month) {
+        const [year, month] = req.query.month.split('-');
+        opStart = new Date(year, month - 1, 1);
+        opEnd = new Date(year, month, 0, 23, 59, 59, 999);
+      } else if (req.query.year) {
+        opStart = new Date(req.query.year, 0, 1);
+        opEnd = new Date(req.query.year, 11, 31, 23, 59, 59, 999);
+      } else {
+        switch (period) {
+          case 'daily': opStart = new Date(opNow.setHours(0,0,0,0)); break;
+          case 'weekly': opStart = new Date(opNow.setDate(opNow.getDate() - 7)); break;
+          case 'monthly': opStart = new Date(opNow.setMonth(opNow.getMonth() - 1)); break;
+          case 'annually': opStart = new Date(opNow.setFullYear(opNow.getFullYear() - 1)); break;
+          case 'all': opStart = new Date(0); break;
+          default: opStart = new Date(opNow.setHours(0,0,0,0));
+        }
+        opEnd = new Date();
       }
       
-      const opFilter = period === 'all' ? {} : { checkIn: { $gte: opStart } };
-      const creationFilter = period === 'all' ? {} : { createdAt: { $gte: opStart } };
+      const opFilter = { createdAt: { $gte: opStart, $lte: opEnd } };
 
-      const [leads_op, quotes_op, invs_op, receipts_op, bookings_op] = await Promise.all([
-        Lead.find({ ...opFilter, status: { $nin: ['Converted', 'Cancelled'] } }).select('leadNumber guestName checkIn status').lean(),
-        Quotation.find({ status: { $nin: ['Accepted', 'Cancelled'] } })
-          .populate('lead', 'checkIn')
-          .populate('booking', 'checkIn')
-          .select('quotationNumber guestName status finalAmount createdAt')
+      // Get data from Leads (booking page) with resort info
+      const [leads_new, leads_quotation, leads_invoice_status] = await Promise.all([
+        Lead.find({ ...opFilter, status: 'New' })
+          .select('leadNumber guestName checkIn checkOut')
+          .populate('resort', 'name')
           .lean(),
-        Invoice.find({ status: { $nin: ['Paid', 'Cancelled'] } })
-          .populate('lead', 'checkIn')
-          .populate('booking', 'checkIn')
-          .select('invoiceNumber guestName status finalAmount createdAt')
+        Lead.find({ ...opFilter, status: 'Quotation' })
+          .select('leadNumber guestName checkIn checkOut')
+          .populate('resort', 'name')
           .lean(),
-        Receipt.find({ ...creationFilter })
-          .select('receiptNumber customerName createdAt amount paymentMethod')
-          .lean(),
-        Booking.find({ ...opFilter, status: 'Confirmed' })
-          .select('bookingNumber guestName checkIn status totalAmount')
+        Lead.find({ ...opFilter, status: 'Invoice' })
+          .select('leadNumber guestName checkIn checkOut _id')
+          .populate('resort', 'name')
           .lean()
       ]);
 
-      const formatCheckIn = (doc) => {
-          const ci = doc.checkIn || doc.lead?.checkIn || doc.booking?.checkIn;
-          return ci ? new Date(ci) : null;
-      };
+      // Get ALL invoices from billing page (regardless of lead status or date)
+      const allInvoiceLeadIds = leads_invoice_status.map(l => l._id);
+      const invoicesFromBilling = await Invoice.find({ 
+        lead: { $in: allInvoiceLeadIds }
+      })
+        .select('lead invoiceNumber createdAt customerName')
+        .populate('lead', 'checkIn checkOut resort')
+        .populate({ path: 'lead', populate: { path: 'resort', select: 'name' } })
+        .lean();
 
-      const sortByDate = (a, b) => new Date(a.date) - new Date(b.date);
+      // Create a map of lead ID to lead data for invoice lookups
+      const leadMap = new Map(leads_invoice_status.map(l => [l._id.toString(), l]));
 
-      // Group data by type for the grouped PDF layout
+      // Format data by status groups
       reportData = {
-        'New Leads': leads_op.filter(l => l.status === 'New').map(l => ({ 
-          type: 'Lead', id: l.leadNumber, customer: l.guestName, date: l.checkIn, amount: 0, status: l.status 
-        })).sort(sortByDate),
-        'Quotations': quotes_op.map(q => ({ 
-          type: 'Quote', id: q.quotationNumber, customer: q.guestName, date: formatCheckIn(q) || q.createdAt, amount: q.finalAmount, status: q.status 
-        })).sort(sortByDate),
-        'Invoices': invs_op.map(i => ({ 
-          type: 'Invoice', id: i.invoiceNumber, customer: i.guestName, date: formatCheckIn(i) || i.createdAt, amount: i.finalAmount, status: i.status 
-        })).sort(sortByDate),
-        'Receipts': receipts_op.map(r => ({ 
-          type: 'Receipt', id: r.receiptNumber, customer: r.customerName, date: r.createdAt, amount: r.amount, status: r.paymentMethod 
-        })).sort((a, b) => new Date(a.date) - new Date(b.date)),
-        'Confirmed Bookings': bookings_op.map(b => ({ 
-          type: 'Booking', id: b.bookingNumber, customer: b.guestName, date: b.checkIn, amount: b.totalAmount, status: b.status 
-        })).sort(sortByDate)
+        'New': leads_new.map(l => ({ 
+          bookingNumber: l.leadNumber,
+          customerName: l.guestName,
+          checkIn: l.checkIn,
+          checkOut: l.checkOut,
+          resortName: l.resort?.name || '-'
+        })),
+        'Quotations': leads_quotation.map(l => ({ 
+          bookingNumber: l.leadNumber,
+          customerName: l.guestName,
+          checkIn: l.checkIn,
+          checkOut: l.checkOut,
+          resortName: l.resort?.name || '-'
+        })),
+        'Invoices': invoicesFromBilling.map(invoice => {
+          const lead = leadMap.get(invoice.lead?._id?.toString()) || invoice.lead;
+          return {
+            bookingNumber: invoice.invoiceNumber,
+            customerName: invoice.customerName || lead?.guestName || 'Unknown',
+            checkIn: lead?.checkIn,
+            checkOut: lead?.checkOut,
+            resortName: lead?.resort?.name || '-'
+          };
+        })
       };
 
-      reportTitle = `Operational Pipeline Report (${period || 'daily'})`;
+      reportTitle = 'Booking Distribution Report';
       break;
 
     default:
