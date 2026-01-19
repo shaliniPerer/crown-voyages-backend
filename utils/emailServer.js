@@ -23,7 +23,7 @@ export const sendInvoiceEmail = async (invoice) => {
   
   return await sendEmail({
     to: invoice.email,
-    subject: `Invoice ${invoice.invoiceNumber} - Payment Due`,
+    subject: `Receipt ${invoice.invoiceNumber} - Payment Due`,
     html
   });
 };
@@ -47,10 +47,9 @@ export const sendPaymentReminderEmail = async (invoice, reminderType, customTemp
   if (customTemplate) {
     // Replace placeholders in custom template
     html = customTemplate
-      .replace(/{customer_name}/g, invoice.customerName || 'Valued Client')
-      .replace(/{invoice_number}/g, invoice.invoiceNumber || 'N/A')
-      .replace(/{id}/g, invoice.invoiceNumber || 'N/A')
-      .replace(/{amount}/g, (invoice.balance || invoice.finalAmount || 0).toFixed(2))
+      .replace(/{customer_name}|{name}/g, invoice.customerName || 'Valued Client')
+      .replace(/{invoice_number}|{receipt_number}/g, invoice.invoiceNumber || 'N/A')
+      .replace(/{amount}|{due_amount}/g, (invoice.balance || invoice.finalAmount || 0).toFixed(2))
       .replace(/{due_date}/g, invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A');
     
     // Wrap in standard layout if it doesn't look like HTML
@@ -76,16 +75,16 @@ export const sendPaymentReminderEmail = async (invoice, reminderType, customTemp
   if (!subject) {
     switch (reminderType) {
       case 'before':
-        subject = `Payment Reminder - Invoice ${invoice.invoiceNumber} Due Soon`;
+        subject = `Payment Reminder - Receipt ${invoice.invoiceNumber} Due Soon`;
         break;
       case 'on':
-        subject = `Payment Due Today - Invoice ${invoice.invoiceNumber}`;
+        subject = `Payment Due Today - Receipt ${invoice.invoiceNumber}`;
         break;
       case 'after':
-        subject = `Overdue Payment Notice - Invoice ${invoice.invoiceNumber}`;
+        subject = `Overdue Payment Notice - Receipt ${invoice.invoiceNumber}`;
         break;
       default:
-        subject = `Payment Reminder - Invoice ${invoice.invoiceNumber}`;
+        subject = `Payment Reminder - Receipt ${invoice.invoiceNumber}`;
     }
   }
   

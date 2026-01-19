@@ -914,7 +914,7 @@ export const paymentReceiptTemplate = (payment, invoice) => {
         <div class="customer-section">
           <h3>Payment Received From:</h3>
           <p><strong>${invoice.customerName}</strong></p>
-          <p>Invoice Reference: ${invoice.invoiceNumber}</p>
+          <p>Receipt Reference: ${invoice.invoiceNumber}</p>
         </div>
 
         <!-- Receipt Details Grid -->
@@ -952,10 +952,10 @@ export const paymentReceiptTemplate = (payment, invoice) => {
         <table class="table">
           <thead>
             <tr>
-              <th>Invoice Date</th>
-              <th>Invoice No</th>
+              <th>Receipt Date</th>
+              <th>Receipt No</th>
               <th>Payment Reference</th>
-              <th>Invoice Total</th>
+              <th>Receipt Total</th>
               <th>Amount Paid</th>
               <th>Still Owing</th>
             </tr>
@@ -1017,17 +1017,17 @@ export const paymentReminderTemplate = (invoice, reminderType) => {
   const messages = {
     before: {
       title: 'Payment Reminder',
-      message: 'This is a friendly reminder that your payment is due soon.',
+      message: `Dear ${invoice.customerName},<br><br>Name: ${invoice.customerName}<br>Receipt Number: ${invoice.invoiceNumber}<br>Due Amount: $${(invoice.balance || 0).toFixed(2)}<br>Please make payment at your earliest convenience to avoid any late fees.<br><br>Thank you for your business!<br><br>Best regards,<br>Crown Voyages Team`,
       color: '#F59E0B'
     },
     on: {
       title: 'Payment Due Today',
-      message: 'Your payment is due today. Please process your payment as soon as possible.',
+      message: `Dear ${invoice.customerName},<br><br>Name: ${invoice.customerName}<br>Receipt Number: ${invoice.invoiceNumber}<br>Due Amount: $${(invoice.balance || 0).toFixed(2)}<br>Please make payment today at your earliest convenience to avoid any late fees.<br><br>Thank you for your business!<br><br>Best regards,<br>Crown Voyages Team`,
       color: '#EF4444'
     },
     after: {
       title: 'Overdue Payment Notice',
-      message: 'Your payment is now overdue. Please make payment immediately to avoid additional late fees.',
+      message: `Dear ${invoice.customerName},<br><br>Name: ${invoice.customerName}<br>Receipt Number: ${invoice.invoiceNumber}<br>Due Amount: $${(invoice.balance || 0).toFixed(2)}<br>Please make payment at your earliest convenience to avoid any late fees.<br><br>Thank you for your business!<br><br>Best regards,<br>Crown Voyages Team`,
       color: '#DC2626'
     }
   };
@@ -1043,8 +1043,6 @@ export const paymentReminderTemplate = (invoice, reminderType) => {
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
         .header { background: ${reminder.color}; color: white; padding: 30px; text-align: center; }
         .content { background: #f9f9f9; padding: 30px; }
-        .invoice-box { background: white; padding: 20px; margin: 20px 0; border-left: 4px solid ${reminder.color}; }
-        .amount { font-size: 32px; font-weight: bold; color: ${reminder.color}; text-align: center; margin: 20px 0; }
         .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
       </style>
     </head>
@@ -1052,34 +1050,15 @@ export const paymentReminderTemplate = (invoice, reminderType) => {
       <div class="container">
         <div class="header">
           <h1>${reminder.title}</h1>
-          <p>Invoice #${invoice.invoiceNumber}</p>
+          <p>Receipt #${invoice.invoiceNumber}</p>
         </div>
         <div class="content">
-          <p>Dear ${invoice.customerName},</p>
-          <p>${reminder.message}</p>
-          
-          <div class="invoice-box">
-            <h3>Invoice Details</h3>
-            <p><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</p>
-            <p><strong>Invoice Date:</strong> ${invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString() : 'N/A'}</p>
-            <p><strong>Due Date:</strong> ${invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}</p>
-            
-            <div class="amount">$${(invoice.balance || 0).toFixed(2)}</div>
-            <p style="text-align: center; color: #666;">Amount Due</p>
-            
-            <div style="margin-top: 20px;">
-              <p><strong>Original Amount:</strong> $${(invoice.finalAmount || 0).toFixed(2)}</p>
-              <p><strong>Amount Paid:</strong> $${(invoice.paidAmount || 0).toFixed(2)}</p>
-              <p><strong>Balance Due:</strong> $${(invoice.balance || 0).toFixed(2)}</p>
-            </div>
+          <div style="margin: 20px 0; font-size: 16px;">
+            ${reminder.message}
           </div>
-          
-          <p>If you have already made this payment, please disregard this notice.</p>
-          <p>For any questions regarding this invoice, please contact us.</p>
-          <p>Thank you for your prompt attention to this matter.</p>
         </div>
         <div class="footer">
-          <p>Resort Luxury Management System</p>
+          <p>Crown Voyages Management System</p>
           <p>© ${new Date().getFullYear()} All rights reserved</p>
         </div>
       </div>
