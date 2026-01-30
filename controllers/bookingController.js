@@ -332,9 +332,18 @@ export const createQuotation = asyncHandler(async (req, res) => {
 
   // Generate quotation number
   const lastQuotation = await Quotation.findOne().sort({ createdAt: -1 });
-  const lastNumber = lastQuotation?.quotationNumber 
-    ? parseInt(lastQuotation.quotationNumber.replace('QT-', '')) 
-    : 0;
+  let lastNumber = 0;
+  if (lastQuotation?.quotationNumber) {
+    // Extract the last 6 digits if in QT-000001 format, or any trailing digits
+    const match = lastQuotation.quotationNumber.match(/(\d{6})$/);
+    if (match) {
+      lastNumber = parseInt(match[1], 10);
+    } else {
+      // fallback: extract any digits
+      const digits = lastQuotation.quotationNumber.replace(/\D/g, '');
+      lastNumber = digits ? parseInt(digits, 10) : 0;
+    }
+  }
   const quotationNumber = `QT-${String(lastNumber + 1).padStart(6, '0')}`;
 
   const quotation = await Quotation.create({

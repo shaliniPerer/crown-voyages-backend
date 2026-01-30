@@ -107,17 +107,9 @@ const quotationSchema = new mongoose.Schema({
 
 // Generate quotation number before saving
 quotationSchema.pre('save', async function(next) {
-  if (this.isNew) {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    this.quotationNumber = `QT${year}${month}${random}`;
-    
-    // Set validity period (default 30 days)
-    if (!this.validUntil) {
-      this.validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    }
+  // Set validity period (default 30 days)
+  if (this.isNew && !this.validUntil) {
+    this.validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   }
   next();
 });
