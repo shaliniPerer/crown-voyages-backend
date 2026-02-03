@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import dotenv from 'dotenv';
+import { Readable } from 'stream';
 
 dotenv.config();
 
@@ -14,14 +15,33 @@ cloudinary.config({
 // Upload image to Cloudinary
 export const uploadToCloudinary = async (file, folder = 'resorts') => {
   try {
-    const result = await cloudinary.uploader.upload(file.path, {
-      folder: `resort-management/${folder}`,
-      resource_type: 'auto',
-      transformation: [
-        { width: 1200, height: 800, crop: 'limit' },
-        { quality: 'auto:good' }
-      ]
-    });
+    const uploadOptions = {
+        folder: `resort-management/${folder}`,
+        resource_type: 'auto',
+        transformation: [
+          { width: 1200, height: 800, crop: 'limit' },
+          { quality: 'auto:good' }
+        ]
+    };
+
+    let result;
+  
+    if (file.buffer) {
+        // Handle buffer (MemoryStorage)
+        result = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+                uploadOptions,
+                (error, result) => {
+                    if (error) reject(error);
+                    else resolve(result);
+                }
+            );
+            Readable.from(file.buffer).pipe(uploadStream);
+        });
+    } else {
+        // Handle path (DiskStorage)
+        result = await cloudinary.uploader.upload(file.path, uploadOptions);
+    }
 
     return {
       url: result.secure_url,

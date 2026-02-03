@@ -16,8 +16,10 @@ export const uploadSingleImage = asyncHandler(async (req, res) => {
   try {
     const result = await uploadToCloudinary(req.file, folder);
     
-    // Delete file from local storage after upload
-    fs.unlinkSync(req.file.path);
+    // Delete file from local storage if it exists (DiskStorage only)
+    if (req.file.path) {
+        fs.unlinkSync(req.file.path);
+    }
 
     res.json({
       success: true,
@@ -30,7 +32,7 @@ export const uploadSingleImage = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     // Clean up file if upload fails
-    if (fs.existsSync(req.file.path)) {
+    if (req.file.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
     throw error;
@@ -51,9 +53,11 @@ export const uploadMultipleImages = asyncHandler(async (req, res) => {
   try {
     const results = await uploadMultipleToCloudinary(req.files, folder);
     
-    // Delete files from local storage after upload
+    // Delete files from local storage after upload (DiskStorage only)
     req.files.forEach(file => {
-      fs.unlinkSync(file.path);
+      if (file.path) {
+          fs.unlinkSync(file.path);
+      }
     });
 
     const urls = results.map(result => result.url);
@@ -69,7 +73,7 @@ export const uploadMultipleImages = asyncHandler(async (req, res) => {
   } catch (error) {
     // Clean up files if upload fails
     req.files.forEach(file => {
-      if (fs.existsSync(file.path)) {
+      if (file.path && fs.existsSync(file.path)) {
         fs.unlinkSync(file.path);
       }
     });
